@@ -10,6 +10,11 @@ the same two-digit room code.
 - **Schießbude** (`gallery.html`): the phones lie side by side and form one continuous
   landscape. Balloons, UFOs, drones and bombs fly across all screens; tap to shoot, the
   first hit scores. 90-second rounds, seats are arranged in the lobby.
+- **Kontrollzentrum** (`control.html`): a cooperative shouting game. Every phone gets its
+  own panel of oddly named buttons, switches and sliders; every player gets an order that
+  usually refers to someone else's panel, so orders have to be shouted across the table.
+  Completed orders fill the team bar (next level: faster, more controls), expired orders
+  cost stability.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.
@@ -48,7 +53,7 @@ PORT_PREFIX=30 docker compose up -d
 ```
 
 Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi).
-Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`.
+Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`.
 Peer-to-peer mode can be tried locally with `http://<host>:3080/?net=p2p`.
 
 ## Run without a server (static hosting)

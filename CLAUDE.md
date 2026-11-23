@@ -8,5 +8,6 @@
 - Client world coordinates: screen width = 1 unit, height = `H` (height/width). Ball `angle` is measured from straight down; on hand-off the hub mirrors `x` and `angle` (phones "face" each other).
 - Blaster lanes at the top = connected, non-away opponents in hub order; hits are validated via one-time shot ids. The same code in different modes is a different room.
 - Schießbude: target paths are deterministic functions of the hub clock (`targetPosition`, duplicated in `public/gallery.js`); clients sync via ping/pong and only send `shoot` for hits. Panorama x is in phone widths (seat i shows [i, i+1]), y is a fraction of screen height.
+- Kontrollzentrum (`control-hub.js`): host-authoritative; panels are sent privately per player (`panel`), orders per issuer (`order`), completions are checked when the owner sends `act`. `test/control-hub.test.js` runs the hub in-process with fake sockets and shortened `CONFIG` timings (no server needed).
 - Static files are served with `no-store` (browsers kept stale CSS with no-cache).
 - `node --watch` inside the container does not always notice edits from the host; `docker compose restart server` when a server change does not seem to apply.

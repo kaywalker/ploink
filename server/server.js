@@ -11,6 +11,7 @@ const { WebSocketServer } = require('ws');
 const pongHub = require('./public/shared/pong-hub');
 const blasterHub = require('./public/shared/blaster-hub');
 const galleryHub = require('./public/shared/gallery-hub');
+const controlHub = require('./public/shared/control-hub');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -26,7 +27,7 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-const HUBS = { '/ws': pongHub, '/ws/shooter': blasterHub, '/ws/gallery': galleryHub };
+const HUBS = { '/ws': pongHub, '/ws/shooter': blasterHub, '/ws/gallery': galleryHub, '/ws/control': controlHub };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');

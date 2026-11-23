@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Ploink Kontrollzentrum</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="control">
+  <section id="game" class="screen control-screen">
+    <header class="hud control-hud">
+      <span class="badge">Raum <strong id="hud-code">--</strong><span class="dot"></span><span id="hud-count">1</span>&nbsp;👤</span>
+      <span class="badge">Level <strong id="hud-level">1</strong></span>
+      <span id="stability" class="stability" aria-label="Stabilität"></span>
+    </header>
+
+    <div id="order" class="order-card" aria-live="assertive">
+      <p class="order-label">Dein Befehl – ruf ihn laut!</p>
+      <p id="order-text" class="order-text">Gleich geht’s los …</p>
+      <div class="order-timer"><span id="order-bar"></span></div>
+    </div>
+
+    <div class="team-progress" aria-label="Team-Fortschritt">
+      <span id="progress-bar"></span>
+      <small id="progress-text">0 / 0</small>
+    </div>
+
+    <div id="panel" class="panel"></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <div id="lobby" class="lobby">
+      <div class="lobby-card">
+        <p class="lobby-kicker">🎛️ Kontrollzentrum · Raum <strong id="lobby-code">--</strong></p>
+        <h2 id="lobby-title" class="lobby-title">Haltet die Station am Laufen!</h2>
+        <ul class="rules">
+          <li>Jedes Handy hat ein eigenes Schaltpult.</li>
+          <li>Oben steht dein Befehl – meistens für das Pult von jemand anderem. <strong>Ruf ihn laut!</strong></li>
+          <li>Hörst du einen Befehl für dein Pult, führ ihn aus.</li>
+          <li>Abgelaufene Befehle kosten Stabilität. Bei 0 ist Schluss.</li>
+        </ul>
+        <section id="results" class="results" hidden>
+          <h3>Ergebnis</h3>
+          <p id="results-text"></p>
+          <ol id="results-list" class="results-list"></ol>
+        </section>
+        <ol id="crew" class="seat-list"></ol>
+        <button id="start" class="btn" type="button">Schicht starten</button>
+        <a href="./" class="btn btn-ghost">Raum verlassen</a>
+      </div>
+    </div>
+
+    <div id="banner" class="countdown control-banner" hidden></div>
+    <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
+  </section>
+
+  <script src="shared/control-hub.js"></script>
+  <script src="shared/net.js"></script>
+  <script src="control.js"></script>
+</body>
+</html>
