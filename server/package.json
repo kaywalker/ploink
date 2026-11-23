@@ -1,0 +1,18 @@
+{
+  "name": "ploink",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multiplayer phone pong: the ball travels between the screens of everyone in a room.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test/smoke.js && node test/shooter-smoke.js && node test/gallery-smoke.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

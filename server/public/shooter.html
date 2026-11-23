@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07080f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Ploink Blaster</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="blaster">
+  <section id="game" class="screen">
+    <canvas id="field"></canvas>
+
+    <header class="hud">
+      <button id="room-badge" class="badge" type="button" aria-label="Rangliste anzeigen">
+        Raum <strong id="hud-code">--</strong>
+        <span class="dot"></span>
+        <span id="hud-count">1</span>&nbsp;👤
+      </button>
+      <div class="my-score">
+        <span id="hud-hp" class="hp" aria-label="Leben"></span>
+        <span class="score-kills" title="Abschüsse">💥 <strong id="hud-kills">0</strong></span>
+      </div>
+    </header>
+
+    <div id="status" class="status"></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <aside id="board" class="board" hidden>
+      <div class="board-head">
+        <h2>Raum <span id="board-code">--</span></h2>
+        <button id="board-close" class="icon-btn" type="button" aria-label="Schließen">✕</button>
+      </div>
+      <div class="board-legend"><span>💥 Abschüsse</span><span>🎯 Treffer</span><span>☠️ Tode</span></div>
+      <ol id="board-list" class="board-list board-list-blaster"></ol>
+      <p class="board-share">Freunde einladen: Blaster wählen und Code <strong id="board-code-2">--</strong> eingeben oder <span id="board-link"></span> öffnen.</p>
+      <a href="./" id="leave" class="btn btn-ghost">Raum verlassen</a>
+    </aside>
+
+    <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
+  </section>
+
+  <script src="shared/blaster-hub.js"></script>
+  <script src="shared/net.js"></script>
+  <script src="shooter.js"></script>
+</body>
+</html>

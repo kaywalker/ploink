@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1033">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Ploink Schießbude</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="gallery">
+  <section id="game" class="screen">
+    <canvas id="field"></canvas>
+
+    <header class="hud">
+      <button id="room-badge" class="badge" type="button" aria-label="Punkte anzeigen">
+        Raum <strong id="hud-code">--</strong>
+        <span class="dot"></span>
+        Platz <strong id="hud-seat">1</strong>
+      </button>
+      <div id="hud-timer" class="timer-pill" hidden>1:30</div>
+      <div class="my-score"><span class="score-points">⭐ <strong id="hud-score">0</strong></span></div>
+    </header>
+
+    <div id="ammo" class="ammo" hidden></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <aside id="board" class="board" hidden>
+      <div class="board-head">
+        <h2>Raum <span id="board-code">--</span></h2>
+        <button id="board-close" class="icon-btn" type="button" aria-label="Schließen">✕</button>
+      </div>
+      <ol id="board-list" class="board-list board-list-gallery"></ol>
+      <button id="stop-round" class="btn btn-ghost" type="button">Runde beenden</button>
+    </aside>
+
+    <div id="lobby" class="lobby">
+      <div class="lobby-card">
+        <p class="lobby-kicker">🎯 Schießbude · Raum <strong id="lobby-code">--</strong></p>
+        <div class="seat-big">
+          <span>Dein Platz</span>
+          <strong id="seat-number">1</strong>
+          <small id="seat-total">von 1</small>
+        </div>
+        <p class="lobby-hint">Legt die Handys in dieser Reihenfolge nebeneinander, Platz&nbsp;1 ganz links. Die Landschaft läuft dann über alle Bildschirme.</p>
+        <ol id="seat-list" class="seat-list"></ol>
+        <div class="seat-move">
+          <button id="move-left" class="btn btn-ghost" type="button">◀ nach links</button>
+          <button id="move-right" class="btn btn-ghost" type="button">nach rechts ▶</button>
+        </div>
+        <section id="results" class="results" hidden>
+          <h3>Letzte Runde</h3>
+          <ol id="results-list" class="results-list"></ol>
+        </section>
+        <div class="legend">
+          <span><i class="lg lg-balloon"></i>Ballon 10</span>
+          <span><i class="lg lg-ufo"></i>Ufo 25</span>
+          <span><i class="lg lg-drone"></i>Drohne 50</span>
+          <span><i class="lg lg-bomb"></i>Bombe −30</span>
+        </div>
+        <button id="start" class="btn" type="button">Runde starten</button>
+        <a href="./" class="btn btn-ghost">Raum verlassen</a>
+      </div>
+    </div>
+
+    <div id="countdown" class="countdown" hidden></div>
+    <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
+  </section>
+
+  <script src="shared/gallery-hub.js"></script>
+  <script src="shared/net.js"></script>
+  <script src="gallery.js"></script>
+</body>
+</html>
