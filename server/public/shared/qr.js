@@ -426,7 +426,7 @@
 
     async function scanAnswer() {
       try {
-        const text = await scanQr('Antwort-Code des Mitspielers scannen');
+        const text = await root.PloinkQr.scanQr('Antwort-Code des Mitspielers scannen');
         if (text) applyAnswer(fragmentOf(text));
       } catch (err) {
         status.textContent = err.message === 'no-camera' ? NO_CAMERA_HINT : 'Kein Kamerazugriff. Du kannst den Code auch mit der Kamera-App scannen.';
@@ -484,21 +484,44 @@
     ui.hide();
   }
 
+  /**
+   * Answer a host's offer. Problems are shown in the dialog instead of silently starting
+   * over, so players can tell what went wrong. Resolves once connected.
+   */
+  function joinWithOffer(link, ui, fragment) {
+    return startGuest(link, ui, fragment).catch((err) => {
+      console.warn('[ploink] QR join failed:', err);
+      ui.show(
+        el('h3', { textContent: 'Verbinden hat nicht geklappt' }),
+        el('p', { textContent: 'Der QR-Code konnte nicht beantwortet werden. Lass dir vom Gastgeber einen neuen Code zeigen und versuch es nochmal.' }),
+        el('p', { className: 'qr-error', textContent: `Details: ${err && err.message ? err.message : err}` }),
+        button('Nochmal versuchen', () => link.finish()),
+      );
+      return new Promise(() => {}); // keep the dialog until the player retries
+    });
+  }
+
   /** No offer in the URL: let the player choose between hosting and joining. */
   function chooseRole(link, ui) {
     return new Promise((resolve, reject) => {
       const status = el('p', { className: 'qr-status' });
       const join = async () => {
         try {
-          const text = await scanQr('QR-Code des Gastgebers scannen');
+          const text = await root.PloinkQr.scanQr('QR-Code des Gastgebers scannen');
           if (!text) return;
           const url = new URL(text, location.href);
           if (url.origin !== location.origin || !/^qr=/.test(fragmentOf(text))) {
             status.textContent = 'Das ist kein Ploink-Code.';
             return;
           }
-          // Open the scanned link: it leads to the right game with the offer in the URL.
-          location.href = url.toString();
+          if (url.pathname === location.pathname && url.search === location.search) {
+            // Same page: assigning location.href would only change the hash (no reload),
+            // so answer the offer right here.
+            joinWithOffer(link, ui, fragmentOf(text)).then(resolve, reject);
+          } else {
+            // Another game: open the scanned link, it carries the offer in its URL.
+            location.href = url.toString();
+          }
         } catch (err) {
           status.textContent = err.message === 'no-camera' ? NO_CAMERA_HINT : 'Kein Kamerazugriff. Du kannst den Code auch mit der Kamera-App scannen.';
         }
@@ -525,11 +548,13 @@
       link.onCleanup(() => ui.remove());
       const fragment = location.hash.replace(/^#/, '');
       if (/^qr=/.test(fragment)) {
-        await startGuest(link, ui, fragment);
+        await joinWithOffer(link, ui, fragment);
       } else {
         await chooseRole(link, ui);
       }
     },
+
+    scanQr,
 
     /** This tab was opened by scanning an answer code with the camera app. */
     relay() {

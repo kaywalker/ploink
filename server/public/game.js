@@ -147,6 +147,18 @@
     connect();
   });
 
+  // Opened from a host's QR code: connect right away so the answer code appears.
+  if (/^#qr=/.test(location.hash)) {
+    joinForm.elements.mode.value = 'pong';
+    joinForm.elements.net.value = 'qr';
+    if (nameInput.value.trim()) {
+      setTimeout(() => joinForm.requestSubmit(), 0);
+    } else {
+      showJoinError('Gib deinen Namen ein und tippe auf „Los geht’s“, dann erscheint dein Antwort-Code.');
+      nameInput.focus();
+    }
+  }
+
   function showJoinError(message) {
     joinError.textContent = message;
     joinError.hidden = false;
