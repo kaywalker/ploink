@@ -115,9 +115,13 @@ async function main() {
   let done = 0;
   while (done < 3) {
     const o = await nextFromAny([a, b], order);
+    assert.equal(typeof o.own, 'boolean', 'orders say whether the control is on the own panel');
     const { client: owner, control, value } = solve(o.text, panels);
     owner.send({ type: 'act', id: control.id, value });
     control.value = value;
+    const acted = await owner.next((m) => m.type === 'acted' && m.id === control.id);
+    assert.equal(acted.ok, true);
+    assert.equal(acted.for.length, 1);
     const ev = await a.next((m) => m.type === 'event' && m.kind === 'done' && m.text === o.text);
     assert.equal(ev.by.name, owner === a ? 'Anna' : 'Ben');
     done++;
@@ -125,6 +129,7 @@ async function main() {
   const levelEvent = await a.next((m) => m.type === 'event' && m.kind === 'level');
   assert.equal(levelEvent.level, 1);
   console.log('✓ orders are completed by the owner of the control, level ends at target');
+  console.log('✓ the actor is told that the action was asked for and by whom');
 
   const level2 = await a.next((m) => m.type === 'panel' && m.level === 2);
   const panelB2 = await b.next((m) => m.type === 'panel' && m.level === 2);
@@ -140,6 +145,8 @@ async function main() {
   const sol = solve(o2.text, panels2);
   if (sol.control.type === 'slider') {
     sol.client.send({ type: 'act', id: sol.control.id, value: (sol.value + 1) % 5 });
+    const miss = await sol.client.next((m) => m.type === 'acted' && m.id === sol.control.id);
+    assert.equal(miss.ok, false);
     await assert.rejects(a.next((m) => m.type === 'event' && m.kind === 'done' && m.text === o2.text, 150));
     console.log('✓ a wrong slider value does not count');
   }

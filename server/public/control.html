@@ -19,7 +19,7 @@
     </header>
 
     <div id="order" class="order-card" aria-live="assertive">
-      <p class="order-label">Dein Befehl – ruf ihn laut!</p>
+      <p id="order-label" class="order-label">📣 Ruf das laut in die Runde!</p>
       <p id="order-text" class="order-text">Gleich geht’s los …</p>
       <div class="order-timer"><span id="order-bar"></span></div>
     </div>
@@ -29,6 +29,7 @@
       <small id="progress-text">0 / 0</small>
     </div>
 
+    <p class="panel-head">🔧 <strong>Dein Pult</strong> – hörst du einen dieser Namen, bedien ihn!</p>
     <div id="panel" class="panel"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
 
@@ -36,12 +37,17 @@
       <div class="lobby-card">
         <p class="lobby-kicker">🎛️ Kontrollzentrum · Raum <strong id="lobby-code">--</strong></p>
         <h2 id="lobby-title" class="lobby-title">Haltet die Station am Laufen!</h2>
-        <ul class="rules">
-          <li>Jedes Handy hat ein eigenes Schaltpult.</li>
-          <li>Oben steht dein Befehl – meistens für das Pult von jemand anderem. <strong>Ruf ihn laut!</strong></li>
-          <li>Hörst du einen Befehl für dein Pult, führ ihn aus.</li>
-          <li>Abgelaufene Befehle kosten Stabilität. Bei 0 ist Schluss.</li>
-        </ul>
+        <div class="roles">
+          <div class="role">
+            <span class="role-icon">📣</span>
+            <div><strong>Rufen</strong><p>Oben steht dein Befehl. Lies ihn laut vor – das Gerät liegt fast immer auf dem Pult von jemand anderem.</p></div>
+          </div>
+          <div class="role">
+            <span class="role-icon">🔧</span>
+            <div><strong>Ausführen</strong><p>Unten ist dein Pult. Hörst du den Namen eines deiner Geräte, bedien es sofort.</p></div>
+          </div>
+        </div>
+        <p class="rules-note">Jeder macht beides gleichzeitig. Abgelaufene Befehle kosten Stabilität – bei 0 fällt die Station aus.</p>
         <section id="results" class="results" hidden>
           <h3>Ergebnis</h3>
           <p id="results-text"></p>

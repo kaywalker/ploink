@@ -933,3 +933,56 @@ body.shake .control-screen { animation: shake .35s ease; }
 
 /* Four game modes: two rows on the join screen. */
 .mode-picker { grid-template-columns: repeat(2, 1fr); }
+
+/* Kontrollzentrum: make "shout" and "do" clearly different */
+.order-card { border-color: #8a6a1c; background: linear-gradient(180deg, #2a2412, #161d36); }
+.order-card .order-label { color: var(--accent); font-weight: 700; }
+.order-card.own { border-color: var(--accent-2); background: linear-gradient(180deg, #10283a, #161d36); }
+.order-card.own .order-label { color: var(--accent-2); }
+
+.panel-head {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.panel-head strong { color: var(--accent-2); }
+
+.ctl { position: relative; transition: border-color .15s, background-color .15s; }
+.ctl.hit { border-color: var(--ok); background: #143823; }
+.ctl.miss { border-color: var(--danger); animation: shake .3s ease; }
+
+.ctl-feedback {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px;
+  pointer-events: none;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.ctl.hit .ctl-feedback { background: rgba(20, 80, 40, 0.95); }
+.ctl.miss .ctl-feedback { background: rgba(120, 25, 40, 0.95); }
+
+.roles { display: grid; gap: 10px; text-align: left; }
+
+.role {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.role-icon { font-size: 26px; line-height: 1; }
+.role strong { font-size: 16px; }
+.role p { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.rules-note { margin: 0; font-size: 12px; color: var(--muted); }

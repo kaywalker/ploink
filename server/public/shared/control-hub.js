@@ -253,7 +253,7 @@
       }
       const foreign = candidates.filter((c) => c.owner !== player);
       const pool = foreign.length > 0 && Math.random() > CONFIG.ownPanelChance ? foreign : candidates;
-      const { control } = pick(pool);
+      const { owner, control } = pick(pool);
 
       let target = null;
       let text;
@@ -269,7 +269,8 @@
       }
       const duration = this.orderDuration();
       player.order = { id: this.nextOrderId++, controlId: control.id, target, text, expiresAt: Date.now() + duration };
-      player.send({ type: 'order', id: player.order.id, text, ms: duration });
+      // `own`: the control is on the issuer's panel, so they have to do it themselves.
+      player.send({ type: 'order', id: player.order.id, text, ms: duration, own: owner === player });
     }
 
     tick() {
@@ -299,6 +300,16 @@
       const control = player.controls.find((c) => c.id === controlId);
       if (!control) return;
       if (control.type !== 'button') control.value = clamp(Math.round(value), 0, control.max);
+
+      // Tell the actor whether this was asked for, so players learn whom to listen to.
+      const matching = [...this.players.values()].filter((p) => p.order && p.order.controlId === control.id
+        && (control.type === 'button' || control.value === p.order.target));
+      player.send({
+        type: 'acted',
+        id: control.id,
+        ok: matching.length > 0,
+        for: matching.map((p) => ({ id: p.id, name: p.name, color: p.color })),
+      });
 
       for (const issuer of this.players.values()) {
         const order = issuer.order;

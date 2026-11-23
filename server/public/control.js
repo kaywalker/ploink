@@ -13,6 +13,9 @@
   const panelEl = $('panel');
   const orderEl = $('order');
   const orderText = $('order-text');
+  const orderLabel = $('order-label');
+  const LABEL_SHOUT = '📣 Ruf das laut in die Runde!';
+  const LABEL_OWN = '🔧 Das Gerät ist auf deinem Pult – mach es selbst!';
   const orderBar = $('order-bar');
   const lobby = $('lobby');
   const banner = $('banner');
@@ -99,6 +102,9 @@
         break;
       case 'order':
         showOrder(msg);
+        break;
+      case 'acted':
+        showActionFeedback(msg);
         break;
       case 'event':
         handleEvent(msg);
@@ -207,6 +213,7 @@
     panelEl.replaceChildren(...controls.map((c) => {
       const card = document.createElement('div');
       card.className = `ctl ctl-${c.type}`;
+      card.dataset.control = c.id;
       const label = document.createElement('p');
       label.className = 'ctl-name';
       label.textContent = c.name;
@@ -272,6 +279,8 @@
   function showOrder(msg) {
     orderId = msg.id || null;
     orderEl.classList.remove('ok', 'fail');
+    orderEl.classList.toggle('own', !!(msg.text && msg.own));
+    orderLabel.textContent = msg.text && msg.own ? LABEL_OWN : LABEL_SHOUT;
     clearTimeout(flashTimer);
     if (!msg.text) {
       if (!orderEl.classList.contains('flashing')) orderText.textContent = '…';
@@ -301,6 +310,33 @@
       orderEl.classList.remove(kind, 'flashing');
       if (!orderId) orderText.textContent = '…';
     }, 900);
+  }
+
+  /** Feedback on the control that was just used: was it asked for, and by whom? */
+  function showActionFeedback(msg) {
+    const card = panelEl.querySelector(`.ctl[data-control="${msg.id}"]`);
+    if (!card) return;
+    let text;
+    if (!msg.ok) {
+      text = 'Hat gerade keiner verlangt';
+    } else if (msg.for.length === 1 && msg.for[0].id === me.id) {
+      text = '✓ Richtig – dein eigener Befehl';
+    } else {
+      text = `✓ Richtig – Befehl von ${msg.for.map((p) => p.name).join(' & ')}`;
+    }
+    card.querySelector('.ctl-feedback')?.remove();
+    const pill = document.createElement('span');
+    pill.className = 'ctl-feedback';
+    pill.textContent = text;
+    card.append(pill);
+    card.classList.remove('hit', 'miss');
+    void card.offsetWidth; // restart the animation
+    card.classList.add(msg.ok ? 'hit' : 'miss');
+    clearTimeout(card.feedbackTimer);
+    card.feedbackTimer = setTimeout(() => {
+      card.classList.remove('hit', 'miss');
+      pill.remove();
+    }, 1400);
   }
 
   function showBanner(title, subtitle = '') {
