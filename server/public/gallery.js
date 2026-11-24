@@ -7,9 +7,6 @@
 // functions of the shared server clock (see gallery.js on the server).
 
 (() => {
-  // This tab only relays a scanned QR answer to the host tab (see shared/qr.js).
-  if (window.PloinkNet && PloinkNet.relayOnly) return;
-
   // ---------------------------------------------------------------------------
   // Tunables
   // ---------------------------------------------------------------------------
@@ -44,8 +41,11 @@
     },
   };
 
-  // Internal room code: from the host's QR join link, or picked by the host itself.
-  const roomCode = PloinkNet.roomCode();
+  const roomCode = PloinkNet.roomCodeFromHash(); // "#42"
+  if (!/^\d{2}$/.test(roomCode)) {
+    location.replace('./');
+    return;
+  }
 
   let token = storage.get(sessionStorage, 'ploink-gallery-token');
   if (!token) {
@@ -324,6 +324,9 @@
     while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
   }
 
+  $('hud-code').textContent = roomCode;
+  $('board-code').textContent = roomCode;
+  $('lobby-code').textContent = roomCode;
   $('room-badge').addEventListener('click', () => { board.hidden = !board.hidden; });
   $('board-close').addEventListener('click', () => { board.hidden = true; });
   $('move-left').addEventListener('click', () => send({ type: 'move', dir: -1 }));

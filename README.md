@@ -1,8 +1,7 @@
 # Ploink
 
-Multiplayer phone games for one room full of phones. Everyone opens the site and picks a
-game; one phone opens the round and the others join by scanning its QR code. No room
-codes, no accounts, no game server and no internet needed once the site is loaded.
+Multiplayer phone games. Everyone opens the site on their phone, picks a mode and enters
+the same two-digit room code.
 
 - **Blaster** (`shooter.html`): each phone shows a ship that follows the finger and
   auto-fires while touching. The top edge is split into one lane per opponent; a shot
@@ -30,34 +29,29 @@ codes, no accounts, no game server and no internet needed once the site is loade
 - Plain HTML/CSS/JS client in `server/public`; no build step.
 - The game logic lives in `server/public/shared/*-hub.js`. The hubs are transport-agnostic
   and run either in Node or in the browser of the hosting phone.
-- `server/public/shared/net.js` connects the game clients:
-  - **QR pairing** (`shared/qr.js`, the only mode players see): one phone opens the round
-    as host, the game hub runs in its browser, and it shows one QR code per new player (a
-    link with the WebRTC offer and the internal room code). The guest scans it (in Ploink or
-    with the normal camera app) and shows an answer QR code, which the host scans. Answers
-    scanned with the camera app open a tab that hands them to the game tab via
-    `BroadcastChannel`. Offers/answers use a compact SDP encoding (~200 characters) with
-    deflate as fallback. The host adds more players any time with the round 📷+ button.
-  - **Server mode, for development** (`?net=server`): a WebSocket to `server/server.js`.
-    The automated tests and the practice bots use it.
-- On static hosting a service worker (`sw.js`, network first) caches the site, so QR mode
-  works without internet once the site has been opened. It is not registered next to the
-  Node server.
-- Vendored libraries in `server/public/vendor`: qrcode-generator 2.0.4 (MIT, license in the
-  file header), jsQR 1.4.0 (Apache-2.0; only loaded when the browser has no
-  `BarcodeDetector`).
+- `server/public/shared/net.js` picks the transport per page load:
+  - **Server mode**: the page was served by `server/server.js` (`GET health` answers
+    `{"ploink": true}`) → WebSocket to that server.
+  - **Peer-to-peer mode** (any static hosting): the first phone that enters a code claims
+    the PeerJS id `ploink-v1-<mode>-<code>` and becomes the host; everyone else connects
+    to it directly via WebRTC. The public PeerJS broker is only used to find each other.
+    If the host leaves, the others reconnect and one of them becomes the new host
+    (scores of that round are lost).
+  - Force a transport with `?net=server` or `?net=p2p`.
+- On static hosting a service worker (`sw.js`, network first) caches the site so it loads
+  instantly on later visits. Playing needs internet for the PeerJS broker. It is not
+  registered next to the Node server.
+- Vendored library in `server/public/vendor`: PeerJS 1.5.5 (MIT, see `peerjs-LICENSE`).
 
-## Run locally
+## Run with the Node server
 
 ```bash
 PORT_PREFIX=30 docker compose up -d
 ```
 
-Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi);
-the games pair via QR codes as everywhere else. For development against the Node server
-(tests, bots) add `?net=server` and a room code: `/?net=server#42`,
-`/shooter.html?net=server#42`, `/gallery.html?net=server#42`, `/control.html?net=server#42`,
-`/brawl.html?net=server#42`.
+Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi).
+Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`.
+Peer-to-peer mode can be tried locally with `http://<host>:3080/?net=p2p`.
 
 ## Run without a server (static hosting)
 
@@ -74,14 +68,14 @@ screen wake lock, which keeps the host awake.
 4. Re-run the workflow in the **Actions** tab (or push again). The site is then available at
    `https://<user>.github.io/<repository>/`.
 
-In-app QR scanning needs camera access, which browsers only allow over HTTPS (or on
-localhost). Without it, players scan the codes with their normal camera app.
-
-Limits of QR pairing:
+Limits of peer-to-peer mode:
 
 - The hosting phone must keep the page open and the screen on; a locked or backgrounded
-  host freezes the game for everybody, and if the host leaves the round is over.
-- Networks that isolate clients (guest or company Wi-Fi) can block direct connections.
+  host freezes the game for everybody.
+- Networks that isolate clients (guest or company Wi-Fi) can block direct connections;
+  use the Node server there.
+- Room codes are shared by everyone using the same site: two groups picking the same code
+  at the same time end up in one room.
 
 ## Test
 
@@ -89,7 +83,7 @@ Limits of QR pairing:
 docker compose exec server npm test
 ```
 
-Practice bots (server mode only, open the games with `?net=server#42`):
+Practice bots (server mode only) for room 42:
 
 ```bash
 docker compose exec -d server node test/bot.js 42 Bot

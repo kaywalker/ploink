@@ -1,15 +1,15 @@
 'use strict';
 
 // Offline support: network first (so updates arrive immediately), cache as fallback.
-// This lets QR mode work without internet once the site has been opened.
+// The site loads instantly on later visits (playing still needs the PeerJS broker).
 // The game server's health check and WebSockets are never cached.
 
-const CACHE = 'ploink-v4';
+const CACHE = 'ploink-v5';
 const ASSETS = [
   './', 'index.html', 'shooter.html', 'gallery.html', 'control.html', 'brawl.html', 'style.css', 'favicon.svg',
   'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js',
-  'shared/net.js', 'shared/qr.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js',
-  'vendor/qrcode-generator-2.0.4.js', 'vendor/jsqr-1.4.0.js',
+  'shared/net.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js',
+  'vendor/peerjs-1.5.5.min.js',
 ];
 
 self.addEventListener('install', (event) => {

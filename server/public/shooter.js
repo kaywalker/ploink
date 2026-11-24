@@ -6,9 +6,6 @@
 // lane is sent to that opponent and comes down on their screen as an enemy shot.
 
 (() => {
-  // This tab only relays a scanned QR answer to the host tab (see shared/qr.js).
-  if (window.PloinkNet && PloinkNet.relayOnly) return;
-
   // ---------------------------------------------------------------------------
   // Tunables
   // ---------------------------------------------------------------------------
@@ -49,8 +46,11 @@
     },
   };
 
-  // Internal room code: from the host's QR join link, or picked by the host itself.
-  const roomCode = PloinkNet.roomCode();
+  const roomCode = PloinkNet.roomCodeFromHash(); // "#42"
+  if (!/^\d{2}$/.test(roomCode)) {
+    location.replace('./');
+    return;
+  }
 
   let token = storage.get(sessionStorage, 'ploink-blaster-token');
   if (!token) {
@@ -246,7 +246,7 @@
       const by = lastKiller ? ` von <strong style="color:${lastKiller.color}">${escapeHtml(lastKiller.name)}</strong>` : '';
       html = `Abgeschossen${by}!<br>Respawn in ${Math.ceil(respawn / 1000)} …`;
     } else if (opponents().length === 0) {
-      html = 'Warte auf Gegner …<br>Der Gastgeber koppelt weitere Spieler über den Knopf „📷+“ unten links.';
+      html = `Warte auf Gegner …<br>Lade andere mit Code <strong>${roomCode}</strong> ein!`;
     }
     if (html !== lastStatus) {
       statusEl.innerHTML = html;
@@ -270,6 +270,10 @@
     while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
   }
 
+  $('hud-code').textContent = roomCode;
+  $('board-code').textContent = roomCode;
+  $('board-code-2').textContent = roomCode;
+  $('board-link').textContent = `${location.host}/shooter.html#${roomCode}`;
   $('room-badge').addEventListener('click', () => { board.hidden = !board.hidden; });
   $('board-close').addEventListener('click', () => { board.hidden = true; });
 

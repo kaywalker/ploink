@@ -4,9 +4,6 @@
 // team's progress. All rules live in shared/control-hub.js.
 
 (() => {
-  // This tab only relays a scanned QR answer to the host tab (see shared/qr.js).
-  if (window.PloinkNet && PloinkNet.relayOnly) return;
-
   const RECONNECT_DELAY_MS = 1200;
 
   const $ = (id) => document.getElementById(id);
@@ -31,8 +28,11 @@
     },
   };
 
-  // Internal room code: from the host's QR join link, or picked by the host itself.
-  const roomCode = PloinkNet.roomCode();
+  const roomCode = PloinkNet.roomCodeFromHash(); // "#42"
+  if (!/^\d{2}$/.test(roomCode)) {
+    location.replace('./');
+    return;
+  }
 
   let token = storage.get(sessionStorage, 'ploink-control-token');
   if (!token) {
@@ -388,6 +388,8 @@
     }
   }
 
+  $('hud-code').textContent = roomCode;
+  $('lobby-code').textContent = roomCode;
   $('start').addEventListener('click', () => send({ type: 'start' }));
 
   connect();

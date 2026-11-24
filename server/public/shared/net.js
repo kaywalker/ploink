@@ -1,46 +1,39 @@
 'use strict';
 
-// Ploink networking: gives the game clients one WebSocket-like "link".
+// Ploink networking: gives the game clients one WebSocket-like "link", whatever the
+// transport is.
 //
-// - QR mode (shared/qr.js, the only mode players see): one phone hosts the round, the
-//   game hub runs in its browser, and every guest pairs with it by exchanging two QR
-//   codes. WebRTC, no broker, no internet needed. The room code is chosen by the host
-//   and travels inside the QR code, so players never type one.
-// - Server mode, for development only (?net=server): a plain WebSocket to the Ploink
-//   Node server, used by the automated tests and the practice bots.
+// - Server mode: the page was served by the Ploink Node server (GET health answers
+//   {ploink: true}) -> a plain WebSocket to that server.
+// - PeerJS mode (e.g. static hosting): the first phone that enters a code claims the
+//   PeerJS id "ploink-v1-<mode>-<code>" and becomes the host; the game hub runs in its
+//   browser. Everyone else gets "unavailable-id" and connects to that host directly via
+//   WebRTC. PeerJS' public broker is only used to find each other.
 //
 // A link behaves like a WebSocket: addEventListener('open' | 'message' | 'close'),
 // send(string), close(), readyState (1 = open). link.role is 'server', 'host' or 'guest'.
+// Force a transport with ?net=server or ?net=p2p.
 
 (function (root) {
+  const PEER_PREFIX = 'ploink-v1-';
   const HEARTBEAT_MS = 3000;
   const SILENCE_TIMEOUT_MS = 12_000;
+  const CONNECT_TIMEOUT_MS = 12_000;
   const HB = '{"type":"__hb"}';
 
   // Read lazily: Pong switches rooms without reloading the page.
   const currentHash = () => location.hash.replace(/^#/, '');
 
-  /** 'server' (development, ?net=server) or 'qr' (everything else). */
+  /** 'server' | 'p2p' | 'auto' (server when the page comes from the Ploink server). */
   function chosenTransport() {
-    return new URLSearchParams(location.search).get('net') === 'server' ? 'server' : 'qr';
+    const forced = new URLSearchParams(location.search).get('net');
+    return forced === 'server' || forced === 'p2p' ? forced : 'auto';
   }
 
-  /** Two-digit room code from "#42" or from a QR join link "#qr=42.<…>". */
+  /** Two-digit room code from "#42". */
   function roomCodeFromHash() {
-    const m = /^(?:qr=)?(\d{2})(?:\.|$)/.exec(currentHash());
+    const m = /^(\d{2})$/.exec(currentHash());
     return m ? m[1] : '';
-  }
-
-  let generatedCode = null;
-  /**
-   * The room code of this page: from a QR join link, or picked once by the host. The
-   * hub on the hosting phone only knows this one room, so collisions do not matter.
-   */
-  function roomCode() {
-    const fromHash = roomCodeFromHash();
-    if (fromHash) return fromHash;
-    if (!generatedCode) generatedCode = String(Math.floor(Math.random() * 100)).padStart(2, '0');
-    return generatedCode;
   }
 
   let serverDetection = null;
@@ -116,8 +109,8 @@
   }
 
   /**
-   * Wrap a guest's connection (host side) for a game hub, with heartbeats. `conn` is a
-   * data channel wrapped by qr.js (on('data'|'close'|'error'), send, close).
+   * Wrap a peer connection (host side) for a game hub, with heartbeats. `conn` is a
+   * PeerJS DataConnection or anything with the same on('data'|'close'|'error'), send, close.
    */
   function hubSocketFromConnection(conn) {
     let lastSeen = Date.now();
@@ -152,6 +145,7 @@
       this.role = null;
       this.transport = null;
       this.ws = null;
+      this.peer = null;
       this.conn = null;
       this.loopback = null;
       this.timers = [];
@@ -163,15 +157,17 @@
     }
 
     async start() {
-      if (chosenTransport() === 'server') {
+      const choice = chosenTransport();
+      const useServer = choice === 'server' || (choice === 'auto' && await detectServer());
+      if (useServer) {
         this.transport = 'server';
         this.startServer();
         return;
       }
-      this.transport = 'qr';
-      await Promise.all([loadScript('vendor/qrcode-generator-2.0.4.js'), loadScript('shared/qr.js')]);
+      this.transport = 'peerjs';
+      await loadScript('vendor/peerjs-1.5.5.min.js');
       if (this.readyState === 3) return;
-      await root.PloinkQr.start(this);
+      await this.startPeer();
     }
 
     // ------------------------------------------------------------------ server
@@ -186,7 +182,67 @@
       ws.addEventListener('close', () => this.finish());
     }
 
-    // ------------------------------------------------------------- QR pairing
+    // ----------------------------------------------------------------- PeerJS
+    peerId() {
+      return `${PEER_PREFIX}${this.options.mode}-${this.options.code}`;
+    }
+
+    startPeer() {
+      return new Promise((resolve, reject) => {
+        const peer = new root.Peer(this.peerId(), { debug: 1 });
+        this.peer = peer;
+        const timeout = setTimeout(() => reject(new Error('broker timeout')), CONNECT_TIMEOUT_MS);
+        this.timers.push(timeout);
+        peer.on('open', () => {
+          clearTimeout(timeout);
+          this.hostGame();
+          peer.on('connection', (conn) => {
+            conn.on('open', () => this.acceptPeer(conn));
+          });
+          // Keep the id reserved on the broker so new guests can still find us.
+          peer.on('disconnected', () => {
+            if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1000);
+          });
+          resolve();
+        });
+        peer.on('error', (err) => {
+          clearTimeout(timeout);
+          if (err.type === 'unavailable-id' && !this.role) {
+            // Somebody already hosts this room: join as a guest.
+            peer.destroy();
+            this.joinPeerAsGuest().then(resolve, reject);
+          } else if (!this.role) {
+            reject(err);
+          } else {
+            console.warn('[ploink] peer error:', err.type);
+          }
+        });
+      });
+    }
+
+    joinPeerAsGuest() {
+      this.role = 'guest';
+      const peer = new root.Peer({ debug: 1 });
+      this.peer = peer;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('host not reachable')), CONNECT_TIMEOUT_MS);
+        this.timers.push(timeout);
+        peer.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+          this.finish();
+        });
+        peer.on('open', () => {
+          const conn = peer.connect(this.peerId(), { serialization: 'raw', reliable: true });
+          this.useGuestConnection(conn).then(() => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+      });
+    }
+
+    // ------------------------------------------------------- PeerJS host/guest
     /** Run the game hub in this browser and join it through an in-memory loopback. */
     hostGame() {
       this.role = 'host';
@@ -225,7 +281,7 @@
       this.options.hub.handleConnection(sock);
     }
 
-    /** Guest side: use `conn` (see qr.js connFromChannel) as this link's transport. Resolves on open. */
+    /** Guest side: use `conn` (PeerJS-like) as this link's transport. Resolves on open. */
     useGuestConnection(conn) {
       this.role = 'guest';
       this.conn = conn;
@@ -290,6 +346,7 @@
       if (this.ws && this.ws.readyState <= 1) this.ws.close();
       if (this.loopback) this.loopback.markClosed();
       if (this.conn) this.conn.close();
+      if (this.peer && !this.peer.destroyed) this.peer.destroy();
       this.dispatchEvent(new Event('close'));
     }
   }
@@ -308,8 +365,8 @@
     if (document.visibilityState === 'visible') requestWakeLock();
   });
 
-  // Offline support (needs a secure context): lets QR mode work without internet
-  // once the site has been opened.
+  // Offline cache (needs a secure context): the site loads instantly on later visits.
+  // Playing still needs internet for the PeerJS broker.
   // Only on static hosting: next to the Node server (often localhost:<port> shared with
   // other projects) a lingering worker would cache foreign files.
   if ('serviceWorker' in navigator && root.isSecureContext && location.protocol !== 'file:') {
@@ -325,15 +382,8 @@
     open: (options) => new Link(options),
     detectServer,
     roomCodeFromHash,
-    roomCode,
     loadScript,
     hubSocketFromConnection,
-    /** True when this page was only opened to hand a scanned QR answer to the host tab. */
-    relayOnly: /^qra=/.test(currentHash()),
   };
 
-  // A scanned answer code opened this page in a new tab: pass it on to the host tab.
-  if (root.PloinkNet.relayOnly) {
-    loadScript('shared/qr.js').then(() => root.PloinkQr.relay()).catch(() => {});
-  }
 })(typeof self !== 'undefined' ? self : this);
