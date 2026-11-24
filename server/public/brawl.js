@@ -17,9 +17,10 @@
   // ---------------------------------------------------------------------------
   // Tunables
   // ---------------------------------------------------------------------------
-  const VIEW_WIDTH = 7;           // world units visible across the phone
-  const FLOOR_TOP = 0.46;         // floor starts at this fraction of the arena height
-  const FLOOR_BOTTOM = 0.96;
+  // The scale adapts to the screen: portrait shows ~6 units, landscape a wider strip.
+  const UNITS_ACROSS = 6.2;       // at most this many world units fit the width…
+  const UNITS_HIGH = 5.2;         // …and this many the height
+  const FLOOR_BOTTOM = 0.94;      // floor ends at this fraction of the screen height
   const INTERP_DELAY_MS = 100;    // render others this far in the past for smooth motion
   const STICK_RADIUS = 55;        // px for full speed
   const DRAG_THRESHOLD = 14;      // px before a touch counts as walking
@@ -35,7 +36,8 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('arena');
   const ctx = canvas.getContext('2d');
-  const pad = $('pad');
+  const area = $('arena-wrap');    // the whole arena is the touch surface
+  const hint = $('gesture-hint');
   const stick = $('stick');
   const knob = stick.querySelector('.stick-knob');
   const lobby = $('lobby');
@@ -82,6 +84,7 @@
   const particles = [];
   const stateSince = new Map();  // entity key -> {code, at} for animations
   let bannerTimer = null;
+  let hintTimer = null;
 
   let cssW = 1;
   let cssH = 1;
@@ -154,6 +157,14 @@
 
     const inLobby = msg.phase === 'lobby' || msg.phase === 'over';
     lobby.hidden = !inLobby;
+    // The gesture hint stays for the first seconds of a game, then gets out of the way.
+    if (inLobby) {
+      clearTimeout(hintTimer);
+      hint.classList.remove('faded');
+    } else if (msg.phase === 'playing' && previous !== 'playing' && msg.wave <= 1) {
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => hint.classList.add('faded'), 8000);
+    }
     renderCrew(msg.players);
     if (inLobby) {
       $('start').textContent = msg.phase === 'over' ? 'Nochmal!' : 'Schicht starten';
@@ -276,29 +287,35 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Thumb gestures
+  // Thumb gestures on the whole arena
   // ---------------------------------------------------------------------------
-  let touch = null;
+  // Every finger is tracked on its own: the first one that starts dragging steers
+  // (floating stick), any other finger can tap or swipe at the same time. With one
+  // thumb that means: drag to walk, let go and tap to punch.
+  const fingers = new Map(); // pointerId -> {x, y, t, dragging}
+  let steeringId = null;
 
-  pad.addEventListener('pointerdown', (e) => {
-    if (touch) return; // one thumb is enough
-    try { pad.setPointerCapture(e.pointerId); } catch { /* keep going without capture */ }
-    touch = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), dragging: false };
-    const rect = pad.getBoundingClientRect();
-    stick.style.left = `${e.clientX - rect.left}px`;
-    stick.style.top = `${e.clientY - rect.top}px`;
-    knob.style.transform = 'translate(-50%, -50%)';
-    stick.hidden = false;
+  area.addEventListener('pointerdown', (e) => {
+    try { area.setPointerCapture(e.pointerId); } catch { /* keep going without capture */ }
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), dragging: false });
     e.preventDefault();
   });
 
-  pad.addEventListener('pointermove', (e) => {
-    if (!touch || e.pointerId !== touch.id) return;
-    const dx = e.clientX - touch.x;
-    const dy = e.clientY - touch.y;
+  area.addEventListener('pointermove', (e) => {
+    const f = fingers.get(e.pointerId);
+    if (!f) return;
+    const dx = e.clientX - f.x;
+    const dy = e.clientY - f.y;
     const dist = Math.hypot(dx, dy);
-    if (!touch.dragging && dist > DRAG_THRESHOLD) touch.dragging = true;
-    if (!touch.dragging) return;
+    if (!f.dragging && dist > DRAG_THRESHOLD && steeringId === null) {
+      f.dragging = true;
+      steeringId = e.pointerId;
+      const rect = area.getBoundingClientRect();
+      stick.style.left = `${f.x - rect.left}px`;
+      stick.style.top = `${f.y - rect.top}px`;
+      stick.hidden = false;
+    }
+    if (!f.dragging) return;
     const scale = Math.min(1, dist / STICK_RADIUS) / (dist || 1);
     setInput(dx * scale, dy * scale);
     const kx = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
@@ -306,29 +323,35 @@
     knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
   });
 
-  function endTouch(e) {
-    if (!touch || e.pointerId !== touch.id) return;
-    const dx = e.clientX - touch.x;
-    const dy = e.clientY - touch.y;
+  function endFinger(e) {
+    const f = fingers.get(e.pointerId);
+    if (!f) return;
+    fingers.delete(e.pointerId);
+    const dx = e.clientX - f.x;
+    const dy = e.clientY - f.y;
     const dist = Math.hypot(dx, dy);
-    const dur = performance.now() - touch.t;
+    const dur = performance.now() - f.t;
     if (dur < SWIPE_MAX_MS && dist > SWIPE_MIN_PX) {
       if (-dy > Math.abs(dx)) send({ type: 'jump' });
       else if (Math.abs(dx) >= Math.abs(dy)) send({ type: 'dash', dir: dx < 0 ? -1 : 1 });
       vibrate(12);
-    } else if (!touch.dragging && dur < TAP_MAX_MS && e.type === 'pointerup') {
+    } else if (!f.dragging && dur < TAP_MAX_MS && e.type === 'pointerup') {
       send({ type: 'punch' });
       vibrate(8);
     }
-    setInput(0, 0);
-    flushInput(true);
-    stick.hidden = true;
-    touch = null;
+    if (steeringId === e.pointerId) {
+      steeringId = null;
+      setInput(0, 0);
+      flushInput(true);
+      stick.hidden = true;
+      knob.style.transform = 'translate(-50%, -50%)';
+    }
   }
 
-  pad.addEventListener('pointerup', endTouch);
-  pad.addEventListener('pointercancel', endTouch);
-  pad.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  area.addEventListener('pointerup', endFinger);
+  area.addEventListener('pointercancel', endFinger);
+  area.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  area.addEventListener('contextmenu', (e) => e.preventDefault()); // long press on mobile
 
   function setInput(mx, mz) {
     const nx = Math.round(mx * 100) / 100;
@@ -358,17 +381,27 @@
     cssH = Math.max(1, rect.height);
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
+    // World scale: fits the width in portrait and the height in landscape.
+    U = Math.min(cssW / UNITS_ACROSS, cssH / UNITS_HIGH);
+    // Floor depth: fill about half the screen, but keep the perspective believable.
+    ZS = Math.min(U * 1.6, Math.max(U * 0.8, (cssH * 0.5) / CFG.depth));
+    floorTop = cssH * FLOOR_BOTTOM - CFG.depth * ZS;
+    viewWidth = cssW / U;
   }
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
-  const unit = () => cssW / VIEW_WIDTH;
-  const floorTopPx = () => cssH * FLOOR_TOP;
-  const zScale = () => (cssH * (FLOOR_BOTTOM - FLOOR_TOP)) / CFG.depth;
+  let U = 50;            // px per world unit
+  let ZS = 60;           // px per unit of floor depth
+  let floorTop = 200;    // px where the floor meets the wall
+  let viewWidth = 7;     // world units visible across the screen
+  const unit = () => U;
+  const floorTopPx = () => floorTop;
+  const zScale = () => ZS;
   const toScreen = (x, z, y = 0) => ({
-    x: (x - camX) * unit() + cssW / 2,
-    gy: floorTopPx() + z * zScale(),
-    y: floorTopPx() + z * zScale() - y * unit(),
+    x: (x - camX) * U + cssW / 2,
+    gy: floorTop + z * ZS,
+    y: floorTop + z * ZS - y * U,
   });
 
   function drawCorridor() {
@@ -381,15 +414,34 @@
     ctx.fillStyle = wall;
     ctx.fillRect(0, 0, cssW, floorTop);
 
-    const left = camX - VIEW_WIDTH / 2 - 1;
-    const right = camX + VIEW_WIDTH / 2 + 1;
+    const left = camX - viewWidth / 2 - 1;
+    const right = camX + viewWidth / 2 + 1;
+    const lockerTop = floorTop - u * 1.55;
+
+    // Ceiling lamps with a soft light cone (fills the tall wall in portrait)
+    for (let lx = Math.floor(left / 3) * 3 + 1.5; lx < right; lx += 3) {
+      const sx = (lx - camX) * u + cssW / 2;
+      const cone = ctx.createLinearGradient(0, 0, 0, floorTop);
+      cone.addColorStop(0, 'rgba(255, 240, 200, 0.10)');
+      cone.addColorStop(1, 'rgba(255, 240, 200, 0)');
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(sx - u * 0.3, 0);
+      ctx.lineTo(sx + u * 0.3, 0);
+      ctx.lineTo(sx + u * 1.3, floorTop);
+      ctx.lineTo(sx - u * 1.3, floorTop);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#c9c3a8';
+      ctx.fillRect(sx - u * 0.35, 0, u * 0.7, Math.max(4, u * 0.08));
+    }
 
     // Windows with moonlight, high on the wall
     for (let wx = Math.floor(left / 5) * 5 + 2; wx < right; wx += 5) {
       const sx = (wx - camX) * u + cssW / 2;
       const w = 1.6 * u;
-      const h = floorTop * 0.3;
-      const top = floorTop * 0.08;
+      const h = u * 1.25;
+      const top = Math.max(8, lockerTop - h - u * 0.45);
       ctx.fillStyle = '#0c1530';
       ctx.fillRect(sx - w / 2, top, w, h);
       ctx.fillStyle = 'rgba(180, 200, 255, 0.18)';
@@ -410,7 +462,6 @@
     }
 
     // Lockers along the wall
-    const lockerTop = floorTop - u * 1.55;
     for (let lx = Math.floor(left / 1.1) * 1.1; lx < right; lx += 1.1) {
       const sx = (lx - camX) * u + cssW / 2;
       const w = 1.0 * u;
@@ -715,7 +766,7 @@
       const mate = [...world.players.values()].find((p) => p.id !== me.id && p.state !== P.down);
       if (mate) focus = mate.x;
     }
-    const half = VIEW_WIDTH / 2;
+    const half = viewWidth / 2;
     const targetCam = Math.min(CFG.arenaWidth - half + 0.5, Math.max(half - 0.5, focus));
     camX += (targetCam - camX) * Math.min(1, dt * 8);
 

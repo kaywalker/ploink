@@ -12,47 +12,54 @@
 </head>
 <body class="brawl">
   <section id="game" class="screen brawl-screen">
-    <div class="arena-wrap">
+    <!-- The whole arena is the touch surface; everything on top ignores touches. -->
+    <div id="arena-wrap" class="arena-wrap">
       <canvas id="arena"></canvas>
-      <header class="hud brawl-hud">
-        <span class="badge">Raum <strong id="hud-code">--</strong><span class="dot"></span><span id="hud-count">1</span>&nbsp;👤</span>
-        <span class="badge">Welle <strong id="hud-wave">1</strong></span>
-        <span class="badge">💥 <strong id="hud-kos">0</strong></span>
-      </header>
-      <div id="ko" class="ko-overlay" hidden></div>
-    </div>
-
-    <div id="pad" class="pad">
-      <div class="pad-top">
-        <div class="hp-bar" aria-label="Deine Energie"><span id="hp-fill"></span><small id="hp-text">100</small></div>
-        <div id="team" class="team"></div>
-      </div>
-      <p class="pad-hint">Ziehen = laufen · Tippen = schlagen<br>↑ wischen = springen · ← → wischen = Tritt</p>
       <div id="stick" class="stick" hidden><span class="stick-knob"></span></div>
     </div>
 
+    <header class="brawl-top">
+      <div class="brawl-badges">
+        <span class="badge">Raum <strong id="hud-code">--</strong><span class="dot"></span><span id="hud-count">1</span>&nbsp;👤</span>
+        <span class="badge">Welle <strong id="hud-wave">1</strong></span>
+        <span class="badge">💥 <strong id="hud-kos">0</strong></span>
+      </div>
+      <div class="brawl-status">
+        <div class="hp-bar" aria-label="Deine Energie"><span id="hp-fill"></span><small id="hp-text">100</small></div>
+        <div id="team" class="team"></div>
+      </div>
+    </header>
+
+    <p id="gesture-hint" class="gesture-hint">Ziehen = laufen · Tippen = schlagen · ↑ wischen = springen · ← → wischen = Tritt<br><span class="landscape-only">Quer: ein Daumen läuft, der andere schlägt</span></p>
+    <div id="ko" class="ko-overlay" hidden></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
 
     <div id="lobby" class="lobby">
-      <div class="lobby-card">
-        <p class="lobby-kicker">🧹 Hausmeister-Trupp · Raum <strong id="lobby-code">--</strong></p>
-        <h2 id="lobby-title" class="lobby-title">Die Staubmonster sind los!</h2>
-        <p class="rules-note">Haltet zusammen die Schule sauber. Alles mit einem Daumen auf der unteren Hälfte:</p>
-        <table class="gesture-table">
-          <tr><td>👆 Ziehen</td><td>Laufen</td></tr>
-          <tr><td>👉 Tippen</td><td>Schlagen – schnell hintereinander für eine Kombo</td></tr>
-          <tr><td>⬆️ Hochwischen</td><td>Springen (in der Luft tippen: Sprungtritt)</td></tr>
-          <tr><td>↔️ Seitlich wischen</td><td>Sprint-Tritt durch die Gegner</td></tr>
-        </table>
-        <p class="rules-note">Ein Monster blinkt rot, bevor es zuschlägt – dann ausweichen!</p>
-        <section id="results" class="results" hidden>
-          <h3>Ergebnis</h3>
-          <p id="results-text"></p>
-          <ol id="results-list" class="results-list"></ol>
-        </section>
-        <ol id="crew" class="seat-list"></ol>
-        <button id="start" class="btn" type="button">Schicht starten</button>
-        <a href="./" class="btn btn-ghost">Raum verlassen</a>
+      <div class="lobby-card brawl-lobby">
+        <div class="lobby-head">
+          <p class="lobby-kicker">🧹 Hausmeister-Trupp · Raum <strong id="lobby-code">--</strong></p>
+          <h2 id="lobby-title" class="lobby-title">Die Staubmonster sind los!</h2>
+        </div>
+        <div class="lobby-info">
+          <p class="rules-note">Haltet zusammen die Schule sauber. Gesteuert wird direkt auf dem Spielfeld – hochkant oder quer:</p>
+          <table class="gesture-table">
+            <tr><td>👆 Ziehen</td><td>Laufen</td></tr>
+            <tr><td>👉 Tippen</td><td>Schlagen – schnell hintereinander für eine Kombo</td></tr>
+            <tr><td>⬆️ Hochwischen</td><td>Springen (in der Luft tippen: Sprungtritt)</td></tr>
+            <tr><td>↔️ Seitlich wischen</td><td>Sprint-Tritt durch die Gegner</td></tr>
+          </table>
+          <p class="rules-note">Ein Monster blinkt rot, bevor es zuschlägt – dann ausweichen! Quer geht’s auch mit zwei Daumen.</p>
+          <section id="results" class="results" hidden>
+            <h3>Ergebnis</h3>
+            <p id="results-text"></p>
+            <ol id="results-list" class="results-list"></ol>
+          </section>
+        </div>
+        <div class="lobby-actions">
+          <ol id="crew" class="seat-list"></ol>
+          <button id="start" class="btn" type="button">Schicht starten</button>
+          <a href="./" class="btn btn-ghost">Raum verlassen</a>
+        </div>
       </div>
     </div>
 

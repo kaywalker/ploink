@@ -992,15 +992,14 @@ body.shake .control-screen { animation: shake .35s ease; }
 body.brawl { background: #14162b; }
 
 .brawl-screen {
-  display: grid;
-  grid-template-rows: 58fr 42fr;
   overflow: hidden;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.arena-wrap { position: relative; min-height: 0; }
+/* The arena fills the screen and is the touch surface. */
+.arena-wrap { position: absolute; inset: 0; touch-action: none; }
 
 #arena {
   position: absolute;
@@ -1010,42 +1009,31 @@ body.brawl { background: #14162b; }
   display: block;
 }
 
-.brawl-hud { justify-content: flex-start; }
-.brawl-hud .badge { cursor: default; }
+/* Overlays let touches through to the arena. */
+.brawl-top,
+.gesture-hint,
+.ko-overlay,
+.brawl-screen .toasts { pointer-events: none; }
 
-.ko-overlay {
+.brawl-top {
   position: absolute;
-  inset: 0;
+  top: calc(var(--safe-top) + 8px);
+  left: calc(env(safe-area-inset-left, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
   display: grid;
-  place-items: center;
-  font-size: 26px;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.8);
-  background: rgba(20, 0, 10, 0.35);
-  pointer-events: none;
+  gap: 6px;
 }
 
-.pad {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px calc(var(--safe-bottom) + 10px);
-  background:
-    radial-gradient(circle at 50% 120%, rgba(77, 214, 255, 0.12), transparent 60%),
-    #101226;
-  border-top: 2px solid #262a4f;
-  touch-action: none;
-}
-
-.pad-top { display: grid; gap: 6px; pointer-events: none; }
+.brawl-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.brawl-badges .badge { padding: 6px 10px; font-size: 13px; background: rgba(10, 12, 28, 0.6); }
+.brawl-status { display: grid; gap: 5px; max-width: 360px; }
 
 .hp-bar {
   position: relative;
-  height: 18px;
+  height: 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(10, 12, 28, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   overflow: hidden;
 }
 
@@ -1062,39 +1050,58 @@ body.brawl { background: #14162b; }
 .hp-bar small {
   position: relative;
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 
-.team { display: flex; flex-wrap: wrap; gap: 6px; }
+.team { display: flex; flex-wrap: wrap; gap: 5px; }
 
 .team-chip {
-  position: relative;
   display: grid;
   gap: 2px;
-  min-width: 70px;
-  padding: 3px 8px 4px;
-  font-size: 11px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  min-width: 64px;
+  padding: 2px 7px 3px;
+  font-size: 10px;
+  border-radius: 7px;
+  background: rgba(10, 12, 28, 0.6);
   border-left: 3px solid var(--chip-color);
 }
 
 .team-chip b { font-weight: 700; color: var(--chip-color); }
-.team-chip i { display: block; height: 4px; border-radius: 4px; background: var(--chip-color); }
+.team-chip i { display: block; height: 3px; border-radius: 3px; background: var(--chip-color); }
 .team-chip.down { opacity: 0.45; }
 
-.pad-hint {
-  margin: auto 0 0;
+.gesture-hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--safe-bottom) + 10px);
+  margin: 0;
   text-align: center;
   font-size: 12px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.35);
-  pointer-events: none;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  transition: opacity 1.2s;
+}
+
+.gesture-hint.faded { opacity: 0; }
+.landscape-only { display: none; }
+
+.ko-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.8);
+  background: rgba(20, 0, 10, 0.35);
 }
 
 .stick {
@@ -1102,9 +1109,9 @@ body.brawl { background: #14162b; }
   width: 110px;
   height: 110px;
   transform: translate(-50%, -50%);
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   pointer-events: none;
 }
 
@@ -1134,6 +1141,31 @@ body.brawl { background: #14162b; }
 }
 
 .gesture-table td:first-child { white-space: nowrap; font-weight: 700; color: var(--text); }
+
+.brawl-lobby .lobby-info,
+.brawl-lobby .lobby-actions { display: grid; gap: 10px; align-content: start; }
+
+/* Landscape: wider HUD row, two-column lobby that fits a short screen. */
+@media (orientation: landscape) {
+  .brawl-top { grid-template-columns: auto minmax(200px, 320px); justify-content: space-between; align-items: start; }
+  .brawl-status { justify-items: stretch; }
+  .landscape-only { display: inline; }
+  .brawl-lobby {
+    max-width: 760px;
+    grid-template-columns: 1.3fr 1fr;
+    column-gap: 18px;
+    align-items: start;
+  }
+  .brawl-lobby .lobby-head { grid-column: 1 / -1; }
+  .brawl .lobby { align-items: start; }
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .brawl-lobby { padding: 12px 16px; gap: 8px; }
+  .brawl-lobby .lobby-title { font-size: 18px; }
+  .brawl-lobby .gesture-table td { padding: 3px 4px; font-size: 12px; }
+  .brawl .control-banner { font-size: 44px; }
+}
 
 /* Five game modes on the join screen */
 .mode-picker .mode-option:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
