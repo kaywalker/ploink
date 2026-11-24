@@ -49,11 +49,8 @@
     },
   };
 
-  const roomCode = PloinkNet.roomCodeFromHash(); // "#42" or a QR join link "#qr=42.…"
-  if (!/^\d{2}$/.test(roomCode)) {
-    location.replace('./');
-    return;
-  }
+  // Internal room code: from the host's QR join link, or picked by the host itself.
+  const roomCode = PloinkNet.roomCode();
 
   let token = storage.get(sessionStorage, 'ploink-blaster-token');
   if (!token) {
@@ -249,7 +246,7 @@
       const by = lastKiller ? ` von <strong style="color:${lastKiller.color}">${escapeHtml(lastKiller.name)}</strong>` : '';
       html = `Abgeschossen${by}!<br>Respawn in ${Math.ceil(respawn / 1000)} …`;
     } else if (opponents().length === 0) {
-      html = `Warte auf Gegner …<br>Lade andere mit Code <strong>${roomCode}</strong> ein!`;
+      html = 'Warte auf Gegner …<br>Der Gastgeber koppelt weitere Spieler über den Knopf „📷+“ unten links.';
     }
     if (html !== lastStatus) {
       statusEl.innerHTML = html;
@@ -273,10 +270,6 @@
     while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
   }
 
-  $('hud-code').textContent = roomCode;
-  $('board-code').textContent = roomCode;
-  $('board-code-2').textContent = roomCode;
-  $('board-link').textContent = `${location.host}/shooter.html#${roomCode}`;
   $('room-badge').addEventListener('click', () => { board.hidden = !board.hidden; });
   $('board-close').addEventListener('click', () => { board.hidden = true; });
 

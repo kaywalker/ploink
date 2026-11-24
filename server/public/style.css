@@ -656,20 +656,22 @@ body.gallery { background: #1b1033; }
 }
 
 .qr-fab {
+  /* Small round button in the bottom-left corner: clear of HUDs, lanes and timers. */
   position: fixed;
   z-index: 40;
-  top: calc(var(--safe-top) + 62px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 8px 14px;
+  left: calc(env(safe-area-inset-left, 0px) + 12px);
+  bottom: calc(var(--safe-bottom) + 14px);
+  width: 46px;
+  height: 46px;
+  padding: 0;
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 800;
   color: var(--text);
   background: rgba(22, 26, 46, 0.85);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   cursor: pointer;
 }
 
@@ -706,19 +708,6 @@ body.gallery { background: #1b1033; }
   box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.35);
 }
 
-/* Connection picker on the join screen */
-.net-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.net-picker legend { margin-bottom: 6px; font-size: 14px; color: var(--muted); }
-.net-picker .mode-option { padding: 8px 4px; }
-.net-picker .mode-option strong { font-size: 14px; }
 
 /* ---------- Kontrollzentrum ---------- */
 

@@ -1,7 +1,7 @@
 # Ploink
 
 - Game logic lives in `server/public/shared/*-hub.js` (UMD: `require` in Node, globals `PloinkPongHub`/`PloinkBlasterHub`/`PloinkGalleryHub` in the browser). Hubs only see a minimal socket (`on('message'|'close')`, `send`, `readyState/OPEN`, `close`) so they run unchanged in Node and on the hosting phone. Never use Node-only APIs there.
-- `server/public/shared/net.js` chooses the transport: WebSocket when `GET health` returns `{ploink: true}`, otherwise PeerJS/WebRTC with host election via the fixed peer id `ploink-v1-<mode>-<code>`. `?net=p2p` forces P2P locally. Link-level heartbeats (`{"type":"__hb"}`) are filtered out before hubs/clients see them.
+- `server/public/shared/net.js`: players only ever use QR pairing (WebRTC, no broker); WebSocket to the Node server only with `?net=server` (tests, bots). Room codes are internal: `PloinkNet.roomCode()` takes it from a QR join link or the host picks one; no UI shows or asks for it. Link-level heartbeats (`{"type":"__hb"}`) are filtered out before hubs/clients see them.
 - QR mode (`shared/qr.js`): host shows one offer QR per guest (`#qr=<code>.<id>.<payload>`), guest answers with `#qra=<id>.<payload>`; a `#qra=` page is relay-only (clients return early, `PloinkNet.relayOnly`) and forwards via BroadcastChannel `ploink-qr`. Payload prefix `c` = compact SDP rebuilt from a template, `z` = deflate, `u` = plain.
 - `sw.js` is only registered when the page is not served by the Node server; the in-app Claude browser refuses service workers, test them in Chrome against a static server.
 - Ball physics run on each client; the Pong hub is only a relay. A ball's `seq` increments on every hand-off and stale `exit`/`miss` messages with an old `seq` are ignored.

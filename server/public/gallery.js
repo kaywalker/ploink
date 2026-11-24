@@ -44,11 +44,8 @@
     },
   };
 
-  const roomCode = PloinkNet.roomCodeFromHash(); // "#42" or a QR join link "#qr=42.…"
-  if (!/^\d{2}$/.test(roomCode)) {
-    location.replace('./');
-    return;
-  }
+  // Internal room code: from the host's QR join link, or picked by the host itself.
+  const roomCode = PloinkNet.roomCode();
 
   let token = storage.get(sessionStorage, 'ploink-gallery-token');
   if (!token) {
@@ -327,9 +324,6 @@
     while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
   }
 
-  $('hud-code').textContent = roomCode;
-  $('board-code').textContent = roomCode;
-  $('lobby-code').textContent = roomCode;
   $('room-badge').addEventListener('click', () => { board.hidden = !board.hidden; });
   $('board-close').addEventListener('click', () => { board.hidden = true; });
   $('move-left').addEventListener('click', () => send({ type: 'move', dir: -1 }));

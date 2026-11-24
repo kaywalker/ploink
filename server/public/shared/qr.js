@@ -146,10 +146,10 @@
     return Array.from(crypto.getRandomValues(new Uint8Array(3)), (b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  /** Link to this page (keeping the game) with ?net=qr and the given hash. */
+  /** Link to this page (keeping the game) with the given hash. QR is the default transport. */
   function pageUrl(hashPart) {
     const url = new URL(location.href);
-    url.searchParams.set('net', 'qr');
+    url.searchParams.delete('net');
     url.hash = hashPart;
     return url.toString();
   }
@@ -359,7 +359,9 @@
       });
     }
 
-    const fab = button('📷 Spieler koppeln', () => openPanel(), 'qr-fab');
+    const fab = button('📷+', () => openPanel(), 'qr-fab');
+    fab.setAttribute('aria-label', 'Spieler koppeln');
+    fab.title = 'Spieler koppeln';
     document.body.append(fab);
 
     link.onCleanup(() => {

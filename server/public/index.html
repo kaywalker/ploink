@@ -46,33 +46,15 @@
             <small>Ball weiterspielen</small>
           </label>
         </fieldset>
-        <fieldset class="net-picker">
-          <legend>Verbindung</legend>
-          <label class="mode-option">
-            <input type="radio" name="net" value="auto" checked>
-            <strong>🌐 Automatisch</strong>
-            <small>Server oder Internet</small>
-          </label>
-          <label class="mode-option">
-            <input type="radio" name="net" value="qr">
-            <strong>📷 QR-Code</strong>
-            <small>ohne Internet</small>
-          </label>
-        </fieldset>
-        <label class="field">
-          <span>Raum-Code</span>
-          <input id="code" class="code-input" type="text" inputmode="numeric" pattern="[0-9]{2}" maxlength="2" placeholder="42" required>
-        </label>
         <label class="field">
           <span>Dein Name</span>
           <input id="name" type="text" maxlength="16" placeholder="z.&nbsp;B. Alex" enterkeyhint="go">
         </label>
         <p id="join-error" class="error" role="alert" hidden></p>
         <button id="join-button" type="submit" class="btn">Los geht’s</button>
-        <button id="random-code" type="button" class="btn btn-ghost">Zufälligen Raum erstellen</button>
       </form>
 
-      <p class="hint">Alle, die denselben Code eingeben, landen in derselben Runde.</p>
+      <p class="hint">📷 Ein Handy eröffnet die Runde, die anderen scannen seinen QR-Code – ganz ohne Internet.</p>
     </div>
   </section>
 
@@ -82,9 +64,7 @@
 
     <header class="hud">
       <button id="room-badge" class="badge" type="button" aria-label="Spielerliste anzeigen">
-        Raum <strong id="hud-code">--</strong>
-        <span class="dot"></span>
-        <span id="hud-count">1</span>&nbsp;👤
+        👤 <span id="hud-count">1</span>
       </button>
       <div class="my-score">
         <span class="score-hits" title="Abgewehrt">✓ <strong id="hud-hits">0</strong></span>
@@ -97,12 +77,12 @@
 
     <aside id="board" class="board" hidden>
       <div class="board-head">
-        <h2>Raum <span id="board-code">--</span></h2>
+        <h2>Spieler</h2>
         <button id="board-close" class="icon-btn" type="button" aria-label="Schließen">✕</button>
       </div>
       <ol id="board-list" class="board-list"></ol>
-      <p class="board-share">Freunde einladen: Code <strong id="board-code-2">--</strong> eingeben oder <span id="board-link"></span> öffnen.</p>
-      <button id="leave" class="btn btn-ghost" type="button">Raum verlassen</button>
+      <p class="board-share">Weitere Spieler koppelt der Gastgeber über den Knopf „📷+“ unten links.</p>
+      <button id="leave" class="btn btn-ghost" type="button">Runde verlassen</button>
     </aside>
 
     <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>

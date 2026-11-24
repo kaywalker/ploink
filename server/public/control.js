@@ -31,11 +31,8 @@
     },
   };
 
-  const roomCode = PloinkNet.roomCodeFromHash(); // "#42" or a QR join link "#qr=42.…"
-  if (!/^\d{2}$/.test(roomCode)) {
-    location.replace('./');
-    return;
-  }
+  // Internal room code: from the host's QR join link, or picked by the host itself.
+  const roomCode = PloinkNet.roomCode();
 
   let token = storage.get(sessionStorage, 'ploink-control-token');
   if (!token) {
@@ -391,8 +388,6 @@
     }
   }
 
-  $('hud-code').textContent = roomCode;
-  $('lobby-code').textContent = roomCode;
   $('start').addEventListener('click', () => send({ type: 'start' }));
 
   connect();

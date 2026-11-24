@@ -29,11 +29,9 @@
   const joinScreen = $('join');
   const gameScreen = $('game');
   const joinForm = $('join-form');
-  const codeInput = $('code');
   const nameInput = $('name');
   const joinError = $('join-error');
   const joinButton = $('join-button');
-  const randomCodeButton = $('random-code');
   const canvas = $('field');
   const ctx = canvas.getContext('2d');
   const statusEl = $('status');
@@ -86,61 +84,24 @@
   // ---------------------------------------------------------------------------
   // Join screen
   // ---------------------------------------------------------------------------
-  function initialCode() {
-    const fromHash = PloinkNet.roomCodeFromHash();
-    const fromQuery = new URLSearchParams(location.search).get('code') || '';
-    const code = /^\d{2}$/.test(fromHash) ? fromHash : fromQuery;
-    return /^\d{2}$/.test(code) ? code : '';
-  }
-
-  codeInput.value = initialCode();
   nameInput.value = storage.get(localStorage, 'ploink-name') || '';
-  // A shared "#42" link opens Pong (that is what such links pointed to first);
-  // otherwise preselect the mode played last.
-  const preferredMode = location.hash ? 'pong' : storage.get(localStorage, 'ploink-mode');
+  // A QR join link for Pong opens this page; otherwise preselect the mode played last.
+  const preferredMode = /^#qr=/.test(location.hash) ? 'pong' : storage.get(localStorage, 'ploink-mode');
   if (['pong', 'blaster', 'gallery', 'control', 'brawl'].includes(preferredMode)) joinForm.elements.mode.value = preferredMode;
-  const preferredNet = /^#qr=/.test(location.hash) || new URLSearchParams(location.search).get('net') === 'qr'
-    ? 'qr' : storage.get(localStorage, 'ploink-net');
-  if (preferredNet === 'qr' || preferredNet === 'auto') joinForm.elements.net.value = preferredNet;
-
-  codeInput.addEventListener('input', () => {
-    codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 2);
-    joinError.hidden = true;
-    if (codeInput.value.length === 2 && !nameInput.value) nameInput.focus();
-  });
-
-  randomCodeButton.addEventListener('click', () => {
-    codeInput.value = String(Math.floor(Math.random() * 100)).padStart(2, '0');
-    joinError.hidden = true;
-    nameInput.focus();
-  });
 
   joinForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const code = codeInput.value.trim();
-    if (!/^\d{2}$/.test(code)) {
-      showJoinError('Bitte einen zweistelligen Code eingeben (00–99).');
-      codeInput.focus();
-      return;
-    }
     const name = nameInput.value.trim();
     storage.set(localStorage, 'ploink-name', name);
     const mode = joinForm.elements.mode.value;
     storage.set(localStorage, 'ploink-mode', mode);
-    // The connection choice is read by shared/net.js (localStorage and ?net=).
-    const net = joinForm.elements.net.value;
-    storage.set(localStorage, 'ploink-net', net);
-    const search = new URLSearchParams(location.search);
-    if (net === 'qr') search.set('net', 'qr');
-    else if (search.get('net') === 'qr') search.delete('net');
-    const query = search.toString() ? `?${search}` : '';
-    if (query !== location.search) history.replaceState(null, '', `${location.pathname}${query}${location.hash}`);
+    // Each game opens its QR pairing dialog; ?net=server (development) is passed along.
     const pages = { blaster: 'shooter.html', gallery: 'gallery.html', control: 'control.html', brawl: 'brawl.html' };
     if (pages[mode]) {
-      location.href = `${pages[mode]}${query}#${code}`;
+      location.href = `${pages[mode]}${location.search}`;
       return;
     }
-    roomCode = code;
+    roomCode = PloinkNet.roomCode();
     me.name = name;
     joinButton.disabled = true;
     requestImmersiveMode();
@@ -150,7 +111,6 @@
   // Opened from a host's QR code: connect right away so the answer code appears.
   if (/^#qr=/.test(location.hash)) {
     joinForm.elements.mode.value = 'pong';
-    joinForm.elements.net.value = 'qr';
     if (nameInput.value.trim()) {
       setTimeout(() => joinForm.requestSubmit(), 0);
     } else {
@@ -258,10 +218,6 @@
     joinScreen.hidden = true;
     gameScreen.hidden = false;
     joinButton.disabled = false;
-    $('hud-code').textContent = roomCode;
-    $('board-code').textContent = roomCode;
-    $('board-code-2').textContent = roomCode;
-    $('board-link').textContent = `${location.host}/#${roomCode}`;
     resize();
     requestWakeLock();
   }
@@ -374,7 +330,7 @@
       });
       statusEl.append(document.createElement('br'), 'Mach dich bereit …');
     } else if (others.length === 0) {
-      statusEl.append('Du bist allein im Raum.', document.createElement('br'), `Lade andere mit Code ${roomCode} ein!`);
+      statusEl.append('Du bist noch allein.', document.createElement('br'), 'Der Gastgeber koppelt weitere Spieler über den Knopf „📷+“ unten links.');
     } else {
       statusEl.append('Gleich geht’s weiter …');
     }
