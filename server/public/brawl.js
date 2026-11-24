@@ -532,27 +532,24 @@
 
   const BROOM_HANDLE = 0.85; // grip to bristles, in world units
   const BROOM_BRUSH = 0.3;
+  const BROOM_REACH = BROOM_HANDLE + BROOM_BRUSH;
 
   /**
    * Broom pose in the janitor's local frame (x = forward, y = down, feet at 0):
    * grip = front hand, angle = broom direction measured from straight down towards
-   * the front. Overhead blows swing from behind the head down onto the monster;
-   * the dash sweeps the floor.
+   * the front. A tap sweeps the bristles along the floor from behind the feet to the
+   * front; the dash pushes the broom ahead.
    */
   function broomPose(p, elapsed, walk, t) {
     const hitAt = CFG.punchHitAtMs;
     switch (p.state) {
       case P.punch: {
-        const raised = Math.PI + 0.5;               // above and behind the head
-        const end = p.combo === 2 ? 0.75 : 1.15;    // third blow goes down to the floor
-        const k = Math.min(1, elapsed / hitAt);
-        const e = k * k;                            // accelerate into the blow
-        const back = Math.min(1, Math.max(0, (elapsed - hitAt - 60) / 140));
-        return {
-          angle: raised + (end - raised) * e + (0.5 - end) * back * 0.6,
-          grip: { x: 0.02 + 0.28 * e, y: -1.6 + 0.48 * e },
-          swoosh: k > 0.2 && elapsed < hitAt + 90 ? Math.min(1.1, raised - (raised + (end - raised) * e)) : 0,
-        };
+        const k = Math.min(1, elapsed / (hitAt + 60));
+        const e = 1 - (1 - k) * (1 - k);                          // fast stroke, soft stop
+        const back = Math.min(1, Math.max(0, (elapsed - hitAt - 80) / 120));
+        const angle = -0.75 + 1.95 * e - 0.55 * back;              // behind the feet → in front
+        const gripY = Math.min(-0.75, 0.02 - Math.cos(angle) * BROOM_REACH); // bristles stay on the floor
+        return { angle, grip: { x: -0.05 + 0.35 * e - 0.15 * back, y: gripY } };
       }
       case P.dash:
         return { angle: 1.25 + 0.35 * Math.sin(elapsed / 45), grip: { x: 0.32, y: -0.8 } };
@@ -601,45 +598,26 @@
     ctx.restore();
   }
 
-  /** Motion trail behind the bristles during an overhead blow. */
-  function drawSwoosh(grip, angle, span) {
-    const r = BROOM_HANDLE + BROOM_BRUSH * 0.8;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-    ctx.lineWidth = 0.12;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i <= 8; i++) {
-      const a = angle + (span * i) / 8;
-      const x = grip.x + Math.sin(a) * r;
-      const y = grip.y + Math.cos(a) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  /** Cosmetic dust: sweeping during the dash, a puff when the third blow hits the floor. */
+  /** Cosmetic dust kicked up by the bristles: while sweeping and during the dash. */
   function broomDust(p, now) {
     const entry = stateSince.get(`p${p.id}`);
     if (!entry) return;
     const elapsed = now - entry.at;
-    const tipX = p.x + p.facing * 1.05;
     if (p.state === P.dash && Math.random() < 0.7) {
-      spawnDust(tipX, p.z, 0.05, 1);
-    } else if (p.state === P.punch && p.combo === 2 && !entry.slammed && elapsed >= CFG.punchHitAtMs) {
-      entry.slammed = true;
-      spawnDust(p.x + p.facing * 1.1, p.z, 0.05, 14);
+      spawnDust(p.x + p.facing * 1.05, p.z, 0.05, 1, p.facing);
+    } else if (p.state === P.punch && elapsed < CFG.punchHitAtMs + 70 && Math.random() < 0.8) {
+      const pose = broomPose(p, elapsed, 0, 0);
+      const tip = pose.grip.x + Math.sin(pose.angle) * BROOM_REACH;
+      spawnDust(p.x + p.facing * tip, p.z, 0.05, p.combo === 2 ? 3 : 2, p.facing);
     }
   }
 
-  function spawnDust(x, z, y, count) {
+  function spawnDust(x, z, y, count, dir = 0) {
     const colors = ['#b9ae9a', '#8f877a', '#d8cfbd'];
     for (let i = 0; i < count; i++) {
       particles.push({
         x, z, y,
-        vx: (Math.random() - 0.5) * 2.2,
+        vx: dir ? dir * (0.6 + Math.random() * 2) : (Math.random() - 0.5) * 2.2,
         vy: 0.3 + Math.random() * 1.2,
         life: 1,
         decay: 1.4,
@@ -714,7 +692,6 @@
     ctx.fillRect(0.13, -1.32, 0.07, 0.3);
     ctx.fillRect(-0.14, -1.0, 0.28, 0.18);
 
-    if (pose.swoosh) drawSwoosh(pose.grip, pose.angle, pose.swoosh);
     drawBroom(pose.grip, pose.angle);
 
     // Front arm and both hands on the handle
@@ -765,8 +742,10 @@
     const elapsed = since(`e${e.id}`, e.state, now);
     let alpha = 1;
     if (e.state === E.dead) alpha = Math.max(0, 1 - elapsed / 600);
+    // Monsters from the back crawl out of the lockers: fade in until they reach the floor.
+    if (e.z < 0) alpha = Math.max(0.15, 1 + e.z / 0.9);
     ctx.globalAlpha = alpha;
-    drawShadow(s.x, s.gy, u * 0.38);
+    if (e.z >= 0) drawShadow(s.x, s.gy, u * 0.38);
 
     ctx.save();
     ctx.translate(s.x, s.y - u * 0.42);
@@ -899,7 +878,8 @@
       const pos = isMe && pred.ready && MOVABLE.has(p.state) ? { ...p, x: pred.x, z: pred.z } : p;
       // Lift a teammate's name tag when it would overlap the own "▼ du".
       const lift = !isMe && ownX !== null && Math.abs(pos.x - ownX) < 0.9 ? 0.32 : 0;
-      items.push({ z: pos.z, draw: () => drawJanitor(pos, toScreen(pos.x, pos.z, pos.y), (playerInfo.get(p.id) || {}).color || '#ccc', now, isMe, lift) });
+      // Slight bias: a janitor stays in front of a monster standing at the same depth.
+      items.push({ z: pos.z + 0.05, draw: () => drawJanitor(pos, toScreen(pos.x, pos.z, pos.y), (playerInfo.get(p.id) || {}).color || '#ccc', now, isMe, lift) });
     }
     for (const e of world.enemies.values()) {
       items.push({ z: e.z, draw: () => drawMonster(e, toScreen(e.x, e.z, e.y), now) });

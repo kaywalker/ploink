@@ -17,9 +17,11 @@ the same two-digit room code.
   cost stability.
 - **Hausmeister-Trupp** (`brawl.html`): a cooperative side-scrolling brawler against waves of
   dust monsters, portrait or landscape. The whole arena is the touch surface (drag = walk,
-  tap = punch combo, swipe up = jump, swipe sideways = dash kick); one thumb is enough, in
-  landscape a second thumb can punch while the first steers. Each phone follows its own
-  janitor; the host simulates everything and sends ~15 snapshots per second.
+  tap = broom sweep combo, swipe up = jump, swipe sideways = dash kick); one thumb is enough,
+  in landscape a second thumb can sweep while the first steers. Monsters come from every
+  direction (both sides, out of the lockers, up from the front) and spread around a janitor
+  instead of queueing on one side. Each phone follows its own janitor; the host simulates
+  everything and sends ~15 snapshots per second.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.

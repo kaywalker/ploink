@@ -35,9 +35,10 @@
     punchMs: 260,
     punchHitAtMs: 90,
     comboWindowMs: 450,
-    punchRange: 1.3,             // the broom reaches further than a fist
+    punchRange: 1.3,             // a tap sweeps the broom along the floor in front
     depthReach: 0.5,
-    punchDamage: [9, 9, 16],     // third hit of a combo knocks down
+    sweepDepthReach: 0.65,       // the sweep covers a bit more floor depth than a kick
+    punchDamage: [9, 9, 16],     // third sweep of a combo knocks down
     aimAssistRange: 2.4,
     kickMs: 320,
     kickDamage: 14,
@@ -59,6 +60,8 @@
     enemyHurtMs: 300,
     enemyKnockdownMs: 900,
     spawnIntervalMs: 800,
+    spawnViewHalf: 4.4,          // monsters from the sides appear just outside a phone's view
+    flankEveryMs: 1200,          // how often a monster reconsiders which side of its target to attack
 
     maxPlayersPerRoom: 6,
     disconnectGraceMs: 60_000,
@@ -70,6 +73,10 @@
   // Compact state codes used in snapshots.
   const P = { idle: 0, walk: 1, punch: 2, jump: 3, hurt: 4, down: 5, dash: 6, kick: 7 };
   const E = { idle: 0, walk: 1, windup: 2, attack: 3, hurt: 4, knocked: 5, dead: 6 };
+
+  const SPAWN_SIDES = ['left', 'right', 'back', 'front'];
+  const ENTRY_MARGIN = 0.9; // how far off the floor monsters from the back/front start
+  const ATTACK_SLOTS = [{ dx: 0.85, dz: 0 }, { dx: 0.8, dz: 0.4 }, { dx: 0.8, dz: -0.4 }, { dx: 1.6, dz: 0 }];
 
   const rooms = new Map();
 
@@ -216,11 +223,52 @@
       if (this.toSpawn === 0 && this.enemies.length === 0) this.waveCleared();
     }
 
-    spawnEnemy() {
-      const side = Math.random() < 0.5 ? -1 : 1;
+    /**
+     * Monsters come from every direction around a random janitor: from the left and
+     * right just outside the view, out of the lockers at the back and up from the
+     * front edge of the floor.
+     */
+    spawnEnemy(from = SPAWN_SIDES[Math.floor(Math.random() * SPAWN_SIDES.length)]) {
+      const standing = this.connected().filter((p) => p.state !== 'down');
+      const anchor = standing.length ? standing[Math.floor(Math.random() * standing.length)] : null;
+      const ax = anchor ? anchor.x : CONFIG.arenaWidth / 2;
+      const W = CONFIG.arenaWidth;
+      let x;
+      let z;
+      if (from === 'left' || from === 'right') {
+        x = ax + (from === 'left' ? -1 : 1) * CONFIG.spawnViewHalf;
+        if (x < 0 || x > W) x = x < 0 ? ax + CONFIG.spawnViewHalf : ax - CONFIG.spawnViewHalf;
+        x = clamp(x, -0.8, W + 0.8);
+        z = Math.random() * CONFIG.depth;
+      } else {
+        x = clamp(ax + (Math.random() * 2 - 1) * 2.5, 0.6, W - 0.6);
+        z = from === 'back' ? -ENTRY_MARGIN : CONFIG.depth + ENTRY_MARGIN;
+      }
       const scale = 1 + (this.wave - 1) * 0.12;
-      this.enemies.push(new Enemy(this.nextEnemyId++, side < 0 ? -0.8 : CONFIG.arenaWidth + 0.8,
-        Math.random() * CONFIG.depth, Math.round(CONFIG.enemyHp * scale), CONFIG.enemyDamage + (this.wave - 1)));
+      const enemy = new Enemy(this.nextEnemyId++, x, z, Math.round(CONFIG.enemyHp * scale), CONFIG.enemyDamage + (this.wave - 1));
+      enemy.facing = x < ax ? 1 : -1;
+      this.enemies.push(enemy);
+      return enemy;
+    }
+
+    /**
+     * Which side of the target a monster attacks from: the less crowded one, so a group
+     * surrounds a janitor instead of queueing up on one side.
+     */
+    flankSide(e, target, now) {
+      if (e.targetId === target.id && now < e.flankAt) return e.side;
+      let left = 0;
+      let right = 0;
+      for (const o of this.enemies) {
+        if (o === e || o.state === 'dead' || o.targetId !== target.id) continue;
+        if (o.side < 0) left++;
+        else right++;
+      }
+      const natural = e.x < target.x ? -1 : 1;
+      e.side = left === right ? natural : left < right ? -1 : 1;
+      e.targetId = target.id;
+      e.flankAt = now + CONFIG.flankEveryMs;
+      return e.side;
     }
 
     respawnX(player) {
@@ -260,7 +308,7 @@
           if (!p.hitDone && now >= p.stateStart + CONFIG.punchHitAtMs) {
             p.hitDone = true;
             const knock = p.combo === 2;
-            this.hitEnemies(p, CONFIG.punchRange, CONFIG.punchDamage[p.combo], knock, now);
+            this.hitEnemies(p, CONFIG.punchRange, CONFIG.punchDamage[p.combo], knock, now, CONFIG.sweepDepthReach);
           }
           if (now >= p.stateUntil) {
             p.lastPunchEnd = now;
@@ -310,16 +358,16 @@
     }
 
     /** Is the enemy in front of the player within `range`? */
-    inReach(p, e, range) {
+    inReach(p, e, range, depthReach = CONFIG.depthReach) {
       if (e.state === 'dead') return false;
       const dx = (e.x - p.x) * p.facing;
-      return dx >= -0.25 && dx <= range && Math.abs(e.z - p.z) <= CONFIG.depthReach && Math.abs(e.y - p.y) < 1.3;
+      return dx >= -0.25 && dx <= range && Math.abs(e.z - p.z) <= depthReach && Math.abs(e.y - p.y) < 1.3;
     }
 
-    hitEnemies(p, range, damage, knock, now) {
+    hitEnemies(p, range, damage, knock, now, depthReach) {
       let hits = 0;
       for (const e of this.enemies) {
-        if (this.inReach(p, e, range)) {
+        if (this.inReach(p, e, range, depthReach)) {
           this.damageEnemy(p, e, damage, knock, now);
           hits++;
         }
@@ -344,7 +392,7 @@
       }
     }
 
-    /** Thumb tap: punch combo on the ground, jump kick in the air. */
+    /** Thumb tap: broom sweep (combo) on the ground, jump kick in the air. */
     punch(p, now) {
       if (p.state === 'down' || p.state === 'hurt' || p.state === 'dash' || p.state === 'kick') return;
       if (p.state === 'punch') {
@@ -454,10 +502,21 @@
         e.setState('idle', now);
         return;
       }
-      const side = e.x < target.x ? -1 : 1;
-      const wantX = target.x + side * 0.85;
+      const side = this.flankSide(e, target, now);
+      // Attack spots on each side: straight in front, then diagonally above and below,
+      // the rest wait a step further out. Closer monsters get the better spots.
+      const dist = (o) => Math.abs(o.x - target.x) + Math.abs(o.z - target.z);
+      const rank = this.enemies.filter((o) => o !== e && o.state !== 'dead' && o.targetId === target.id
+        && o.side === side && dist(o) < dist(e)).length;
+      const slot = ATTACK_SLOTS[Math.min(rank, ATTACK_SLOTS.length - 1)];
+      const wantX = target.x + side * (slot.dx + Math.max(0, rank - ATTACK_SLOTS.length + 1) * 0.6);
+      const wantZ = clamp(target.z + slot.dz, 0, CONFIG.depth);
       const dx = wantX - e.x;
-      const dz = target.z - e.z;
+      // Walking around the target to its other side: swing out in depth instead of
+      // walking straight through the janitor.
+      const crossing = (e.x - target.x) * side < 0 && Math.abs(e.x - target.x) < 1.2;
+      const detour = crossing ? (target.z < CONFIG.depth / 2 ? 0.9 : -0.9) : 0;
+      const dz = wantZ + detour - e.z;
       e.facing = target.x >= e.x ? 1 : -1;
       if (Math.abs(dx) < 0.25 && Math.abs(dz) < 0.3) {
         if (now >= e.cooldownUntil) e.setState('windup', now, CONFIG.enemyWindupMs);
@@ -467,7 +526,8 @@
       const len = Math.hypot(dx, dz * 1.5) || 1;
       e.x += (dx / len) * CONFIG.enemySpeed * dt;
       e.z += ((dz * 1.5) / len) * CONFIG.enemySpeed * 0.7 * dt;
-      e.z = clamp(e.z, 0, CONFIG.depth);
+      // Monsters entering from the lockers or the front edge may still be off the floor.
+      e.z = clamp(e.z, -ENTRY_MARGIN, CONFIG.depth + ENTRY_MARGIN);
       e.setState('walk', now);
     }
 
@@ -590,6 +650,9 @@
       this.state = 'walk';
       this.stateUntil = 0;
       this.cooldownUntil = 0;
+      this.targetId = null;
+      this.side = x < CONFIG.arenaWidth / 2 ? -1 : 1;
+      this.flankAt = 0;
     }
 
     setState(state, now, duration = 0) {
