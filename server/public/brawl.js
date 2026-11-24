@@ -508,6 +508,15 @@
     ctx.fillRect(0, 0, cssW, cssH);
   }
 
+  /**
+   * Animation key of a janitor. Rapid taps chain sweeps on the hub without an idle
+   * state in between that a snapshot could show, but every chained sweep advances the
+   * combo, so the combo step restarts the sweep animation.
+   */
+  function animCode(p) {
+    return p.state === P.punch ? `${P.punch}:${p.combo}` : p.state;
+  }
+
   function since(key, code, now) {
     const entry = stateSince.get(key);
     if (!entry || entry.code !== code) {
@@ -630,7 +639,7 @@
   function drawJanitor(p, s, color, now, isMe, tagLift = 0) {
     const u = unit();
     const t = now / 1000;
-    const elapsed = since(`p${p.id}`, p.state, now);
+    const elapsed = since(`p${p.id}`, animCode(p), now);
     drawShadow(s.x, s.gy, u * 0.32);
     broomDust(p, now);
     if (p.invuln && Math.floor(now / 90) % 2) return;
