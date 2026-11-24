@@ -35,7 +35,7 @@
     punchMs: 260,
     punchHitAtMs: 90,
     comboWindowMs: 450,
-    punchRange: 1.1,
+    punchRange: 1.3,             // the broom reaches further than a fist
     depthReach: 0.5,
     punchDamage: [9, 9, 16],     // third hit of a combo knocks down
     aimAssistRange: 2.4,
@@ -44,6 +44,7 @@
     dashMs: 300,
     dashSpeed: 8,
     dashDamage: 12,
+    sweepRange: 1.15,            // broom sweeping the floor during the dash
     hurtMs: 350,
     respawnMs: 5000,
     invulnMs: 2000,
@@ -281,7 +282,7 @@
           p.x += p.facing * CONFIG.dashSpeed * dt;
           for (const e of this.enemies) {
             if (p.dashHits.has(e.id)) continue;
-            if (this.inReach(p, e, 0.9)) {
+            if (this.inReach(p, e, CONFIG.sweepRange)) {
               p.dashHits.add(e.id);
               this.damageEnemy(p, e, CONFIG.dashDamage, true, now);
             }
@@ -369,7 +370,7 @@
       }
       if (target) {
         p.facing = target.x >= p.x ? 1 : -1;
-        const gap = Math.abs(target.x - p.x) - 0.85;
+        const gap = Math.abs(target.x - p.x) - 1.0; // stop at broom distance
         if (gap > 0) p.x += Math.min(0.4, gap) * p.facing;
         p.z += clamp(target.z - p.z, -0.3, 0.3);
       }

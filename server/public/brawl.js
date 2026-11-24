@@ -533,11 +533,131 @@
     return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
   }
 
+  const BROOM_HANDLE = 0.85; // grip to bristles, in world units
+  const BROOM_BRUSH = 0.3;
+
+  /**
+   * Broom pose in the janitor's local frame (x = forward, y = down, feet at 0):
+   * grip = front hand, angle = broom direction measured from straight down towards
+   * the front. Overhead blows swing from behind the head down onto the monster;
+   * the dash sweeps the floor.
+   */
+  function broomPose(p, elapsed, walk, t) {
+    const hitAt = CFG.punchHitAtMs;
+    switch (p.state) {
+      case P.punch: {
+        const raised = Math.PI + 0.5;               // above and behind the head
+        const end = p.combo === 2 ? 0.75 : 1.15;    // third blow goes down to the floor
+        const k = Math.min(1, elapsed / hitAt);
+        const e = k * k;                            // accelerate into the blow
+        const back = Math.min(1, Math.max(0, (elapsed - hitAt - 60) / 140));
+        return {
+          angle: raised + (end - raised) * e + (0.5 - end) * back * 0.6,
+          grip: { x: 0.02 + 0.28 * e, y: -1.6 + 0.48 * e },
+          swoosh: k > 0.2 && elapsed < hitAt + 90 ? Math.min(1.1, raised - (raised + (end - raised) * e)) : 0,
+        };
+      }
+      case P.dash:
+        return { angle: 1.25 + 0.35 * Math.sin(elapsed / 45), grip: { x: 0.32, y: -0.8 } };
+      case P.kick:
+        return { angle: 1.57, grip: { x: 0.38, y: -1.15 } };
+      case P.jump:
+        return { angle: 2.3, grip: { x: 0.12, y: -1.4 } };
+      case P.hurt:
+        return { angle: -0.5, grip: { x: -0.02, y: -1.25 } };
+      case P.down:
+        return { angle: 0.35, grip: { x: 0.2, y: -0.95 } };
+      default:
+        return { angle: 0.5 + walk * 0.12 + Math.sin(t * 2) * 0.03, grip: { x: 0.22, y: -0.98 } };
+    }
+  }
+
+  function drawBroom(grip, angle) {
+    ctx.save();
+    ctx.translate(grip.x, grip.y);
+    ctx.rotate(-angle); // local +y now points along the broom
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#a0703c';
+    ctx.lineWidth = 0.06;
+    ctx.beginPath();
+    ctx.moveTo(0, -0.22);
+    ctx.lineTo(0, BROOM_HANDLE);
+    ctx.stroke();
+    ctx.fillStyle = '#d6455d';
+    ctx.fillRect(-0.08, BROOM_HANDLE - 0.02, 0.16, 0.06);
+    ctx.fillStyle = '#e2bf6e';
+    ctx.beginPath();
+    ctx.moveTo(-0.08, BROOM_HANDLE + 0.03);
+    ctx.lineTo(0.08, BROOM_HANDLE + 0.03);
+    ctx.lineTo(0.2, BROOM_HANDLE + BROOM_BRUSH);
+    ctx.lineTo(-0.2, BROOM_HANDLE + BROOM_BRUSH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#b8913f';
+    ctx.lineWidth = 0.015;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 0.03, BROOM_HANDLE + 0.05);
+      ctx.lineTo(i * 0.09, BROOM_HANDLE + BROOM_BRUSH - 0.01);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Motion trail behind the bristles during an overhead blow. */
+  function drawSwoosh(grip, angle, span) {
+    const r = BROOM_HANDLE + BROOM_BRUSH * 0.8;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 0.12;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i <= 8; i++) {
+      const a = angle + (span * i) / 8;
+      const x = grip.x + Math.sin(a) * r;
+      const y = grip.y + Math.cos(a) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Cosmetic dust: sweeping during the dash, a puff when the third blow hits the floor. */
+  function broomDust(p, now) {
+    const entry = stateSince.get(`p${p.id}`);
+    if (!entry) return;
+    const elapsed = now - entry.at;
+    const tipX = p.x + p.facing * 1.05;
+    if (p.state === P.dash && Math.random() < 0.7) {
+      spawnDust(tipX, p.z, 0.05, 1);
+    } else if (p.state === P.punch && p.combo === 2 && !entry.slammed && elapsed >= CFG.punchHitAtMs) {
+      entry.slammed = true;
+      spawnDust(p.x + p.facing * 1.1, p.z, 0.05, 14);
+    }
+  }
+
+  function spawnDust(x, z, y, count) {
+    const colors = ['#b9ae9a', '#8f877a', '#d8cfbd'];
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x, z, y,
+        vx: (Math.random() - 0.5) * 2.2,
+        vy: 0.3 + Math.random() * 1.2,
+        life: 1,
+        decay: 1.4,
+        color: colors[i % colors.length],
+        size: 0.14,
+      });
+    }
+  }
+
   function drawJanitor(p, s, color, now, isMe, tagLift = 0) {
     const u = unit();
     const t = now / 1000;
     const elapsed = since(`p${p.id}`, p.state, now);
     drawShadow(s.x, s.gy, u * 0.32);
+    broomDust(p, now);
     if (p.invuln && Math.floor(now / 90) % 2) return;
 
     ctx.save();
@@ -575,12 +695,17 @@
       ctx.stroke();
     }
 
-    // Back arm
+    // The broom: where the front hand grips it and which way it points.
+    const pose = broomPose(p, elapsed, walk, t);
+    const dir = { x: Math.sin(pose.angle), y: Math.cos(pose.angle) };
+    const otherHand = { x: pose.grip.x + dir.x * 0.22, y: pose.grip.y + dir.y * 0.22 };
+
+    // Back arm reaches for the broom, too
     ctx.strokeStyle = skin;
     ctx.lineWidth = 0.11;
     ctx.beginPath();
     ctx.moveTo(-0.1, -1.18);
-    ctx.lineTo(-0.22 - walk * 0.1, -0.82);
+    ctx.lineTo(otherHand.x, otherHand.y);
     ctx.stroke();
 
     // Body: overalls in the player colour
@@ -592,25 +717,22 @@
     ctx.fillRect(0.13, -1.32, 0.07, 0.3);
     ctx.fillRect(-0.14, -1.0, 0.28, 0.18);
 
-    // Front arm: punch, uppercut or swing
+    if (pose.swoosh) drawSwoosh(pose.grip, pose.angle, pose.swoosh);
+    drawBroom(pose.grip, pose.angle);
+
+    // Front arm and both hands on the handle
     ctx.strokeStyle = skin;
+    ctx.lineWidth = 0.11;
     ctx.beginPath();
     ctx.moveTo(0.08, -1.18);
-    let fist;
-    if (p.state === P.punch) {
-      const reach = Math.min(1, elapsed / 90);
-      fist = p.combo === 2 ? { x: 0.2 + 0.3 * reach, y: -1.2 - 0.45 * reach } : { x: 0.15 + 0.5 * reach, y: -1.12 };
-    } else if (p.state === P.hurt) {
-      fist = { x: -0.05, y: -1.55 };
-    } else {
-      fist = { x: 0.2 + walk * 0.12, y: -0.82 };
-    }
-    ctx.lineTo(fist.x, fist.y);
+    ctx.lineTo(pose.grip.x, pose.grip.y);
     ctx.stroke();
     ctx.fillStyle = skin;
-    ctx.beginPath();
-    ctx.arc(fist.x, fist.y, 0.08, 0, Math.PI * 2);
-    ctx.fill();
+    for (const hand of [pose.grip, otherHand]) {
+      ctx.beginPath();
+      ctx.arc(hand.x, hand.y, 0.075, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Head with cap
     ctx.fillStyle = skin;
@@ -729,7 +851,7 @@
     const u = unit();
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.life -= dt * 2.6;
+      p.life -= dt * (p.decay || 2.6);
       if (p.life <= 0) {
         particles.splice(i, 1);
         continue;
@@ -739,7 +861,7 @@
       const s = toScreen(p.x, p.z, p.y);
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
-      const size = u * 0.09 * p.life + 2;
+      const size = u * (p.size || 0.09) * p.life + 2;
       ctx.fillRect(s.x - size / 2, s.y - size / 2, size, size);
     }
     ctx.globalAlpha = 1;
@@ -942,6 +1064,7 @@
     flushInput();
     predict(dt);
     draw(now, dt);
+    if (window.__brawl && window.__brawl.onFrame) window.__brawl.onFrame(now);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -953,5 +1076,8 @@
     get me() { return me; },
     pred,
     send,
+    stateSince,
+    toScreen,
+    onFrame: null, // tests can capture frames at exact animation moments
   };
 })();
