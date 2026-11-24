@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#14162b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Ploink Hausmeister-Trupp</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="brawl">
+  <section id="game" class="screen brawl-screen">
+    <div class="arena-wrap">
+      <canvas id="arena"></canvas>
+      <header class="hud brawl-hud">
+        <span class="badge">Raum <strong id="hud-code">--</strong><span class="dot"></span><span id="hud-count">1</span>&nbsp;👤</span>
+        <span class="badge">Welle <strong id="hud-wave">1</strong></span>
+        <span class="badge">💥 <strong id="hud-kos">0</strong></span>
+      </header>
+      <div id="ko" class="ko-overlay" hidden></div>
+    </div>
+
+    <div id="pad" class="pad">
+      <div class="pad-top">
+        <div class="hp-bar" aria-label="Deine Energie"><span id="hp-fill"></span><small id="hp-text">100</small></div>
+        <div id="team" class="team"></div>
+      </div>
+      <p class="pad-hint">Ziehen = laufen · Tippen = schlagen<br>↑ wischen = springen · ← → wischen = Tritt</p>
+      <div id="stick" class="stick" hidden><span class="stick-knob"></span></div>
+    </div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <div id="lobby" class="lobby">
+      <div class="lobby-card">
+        <p class="lobby-kicker">🧹 Hausmeister-Trupp · Raum <strong id="lobby-code">--</strong></p>
+        <h2 id="lobby-title" class="lobby-title">Die Staubmonster sind los!</h2>
+        <p class="rules-note">Haltet zusammen die Schule sauber. Alles mit einem Daumen auf der unteren Hälfte:</p>
+        <table class="gesture-table">
+          <tr><td>👆 Ziehen</td><td>Laufen</td></tr>
+          <tr><td>👉 Tippen</td><td>Schlagen – schnell hintereinander für eine Kombo</td></tr>
+          <tr><td>⬆️ Hochwischen</td><td>Springen (in der Luft tippen: Sprungtritt)</td></tr>
+          <tr><td>↔️ Seitlich wischen</td><td>Sprint-Tritt durch die Gegner</td></tr>
+        </table>
+        <p class="rules-note">Ein Monster blinkt rot, bevor es zuschlägt – dann ausweichen!</p>
+        <section id="results" class="results" hidden>
+          <h3>Ergebnis</h3>
+          <p id="results-text"></p>
+          <ol id="results-list" class="results-list"></ol>
+        </section>
+        <ol id="crew" class="seat-list"></ol>
+        <button id="start" class="btn" type="button">Schicht starten</button>
+        <a href="./" class="btn btn-ghost">Raum verlassen</a>
+      </div>
+    </div>
+
+    <div id="banner" class="countdown control-banner" hidden></div>
+    <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
+  </section>
+
+  <script src="shared/brawl-hub.js"></script>
+  <script src="shared/net.js"></script>
+  <script src="brawl.js"></script>
+</body>
+</html>

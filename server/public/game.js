@@ -98,7 +98,7 @@
   // A shared "#42" link opens Pong (that is what such links pointed to first);
   // otherwise preselect the mode played last.
   const preferredMode = location.hash ? 'pong' : storage.get(localStorage, 'ploink-mode');
-  if (['pong', 'blaster', 'gallery', 'control'].includes(preferredMode)) joinForm.elements.mode.value = preferredMode;
+  if (['pong', 'blaster', 'gallery', 'control', 'brawl'].includes(preferredMode)) joinForm.elements.mode.value = preferredMode;
   const preferredNet = /^#qr=/.test(location.hash) || new URLSearchParams(location.search).get('net') === 'qr'
     ? 'qr' : storage.get(localStorage, 'ploink-net');
   if (preferredNet === 'qr' || preferredNet === 'auto') joinForm.elements.net.value = preferredNet;
@@ -135,7 +135,7 @@
     else if (search.get('net') === 'qr') search.delete('net');
     const query = search.toString() ? `?${search}` : '';
     if (query !== location.search) history.replaceState(null, '', `${location.pathname}${query}${location.hash}`);
-    const pages = { blaster: 'shooter.html', gallery: 'gallery.html', control: 'control.html' };
+    const pages = { blaster: 'shooter.html', gallery: 'gallery.html', control: 'control.html', brawl: 'brawl.html' };
     if (pages[mode]) {
       location.href = `${pages[mode]}${query}#${code}`;
       return;

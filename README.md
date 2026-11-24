@@ -15,6 +15,10 @@ the same two-digit room code.
   usually refers to someone else's panel, so orders have to be shouted across the table.
   Completed orders fill the team bar (next level: faster, more controls), expired orders
   cost stability.
+- **Hausmeister-Trupp** (`brawl.html`): a cooperative side-scrolling brawler against waves of
+  dust monsters, played with one thumb on the lower half of the screen (drag = walk, tap =
+  punch combo, swipe up = jump, swipe sideways = dash kick). Each phone follows its own
+  janitor; the host simulates everything and sends ~15 snapshots per second.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.
@@ -53,7 +57,7 @@ PORT_PREFIX=30 docker compose up -d
 ```
 
 Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi).
-Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`.
+Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`.
 Peer-to-peer mode can be tried locally with `http://<host>:3080/?net=p2p`.
 
 ## Run without a server (static hosting)

@@ -986,3 +986,154 @@ body.shake .control-screen { animation: shake .35s ease; }
 .role strong { font-size: 16px; }
 .role p { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
 .rules-note { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* ---------- Hausmeister-Trupp (brawler) ---------- */
+
+body.brawl { background: #14162b; }
+
+.brawl-screen {
+  display: grid;
+  grid-template-rows: 58fr 42fr;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.arena-wrap { position: relative; min-height: 0; }
+
+#arena {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.brawl-hud { justify-content: flex-start; }
+.brawl-hud .badge { cursor: default; }
+
+.ko-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.8);
+  background: rgba(20, 0, 10, 0.35);
+  pointer-events: none;
+}
+
+.pad {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px calc(var(--safe-bottom) + 10px);
+  background:
+    radial-gradient(circle at 50% 120%, rgba(77, 214, 255, 0.12), transparent 60%),
+    #101226;
+  border-top: 2px solid #262a4f;
+  touch-action: none;
+}
+
+.pad-top { display: grid; gap: 6px; pointer-events: none; }
+
+.hp-bar {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.hp-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(90deg, #7ee081, #4dd6ff);
+  transition: width .2s;
+}
+
+.hp-bar span.low { background: var(--danger); }
+
+.hp-bar small {
+  position: relative;
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.team { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.team-chip {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 70px;
+  padding: 3px 8px 4px;
+  font-size: 11px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-left: 3px solid var(--chip-color);
+}
+
+.team-chip b { font-weight: 700; color: var(--chip-color); }
+.team-chip i { display: block; height: 4px; border-radius: 4px; background: var(--chip-color); }
+.team-chip.down { opacity: 0.45; }
+
+.pad-hint {
+  margin: auto 0 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.stick {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 225, 86, 0.75);
+  box-shadow: 0 0 18px rgba(255, 225, 86, 0.5);
+  transform: translate(-50%, -50%);
+}
+
+.gesture-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.gesture-table td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.gesture-table td:first-child { white-space: nowrap; font-weight: 700; color: var(--text); }
+
+/* Five game modes on the join screen */
+.mode-picker .mode-option:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
