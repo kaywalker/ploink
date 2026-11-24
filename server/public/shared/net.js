@@ -203,9 +203,26 @@
       this.opened();
     }
 
-    /** Host side: a guest's connection is open; hand it to the hub. */
+    /**
+     * Host side: a guest's connection is open; hand it to the hub. The hosting phone runs
+     * exactly one room, so every paired guest joins it — whatever room code the guest's
+     * page happened to pick before scanning (otherwise host and guest end up alone in
+     * two different rooms on the same hub).
+     */
     acceptPeer(conn) {
-      this.options.hub.handleConnection(hubSocketFromConnection(conn));
+      const sock = hubSocketFromConnection(conn);
+      const hostCode = this.options.code;
+      const emit = sock.emit.bind(sock);
+      sock.emit = (event, data) => {
+        if (event === 'message' && typeof data === 'string' && data.includes('"join"')) {
+          try {
+            const msg = JSON.parse(data);
+            if (msg && msg.type === 'join') data = JSON.stringify({ ...msg, code: hostCode });
+          } catch { /* not JSON: leave it to the hub */ }
+        }
+        emit(event, data);
+      };
+      this.options.hub.handleConnection(sock);
     }
 
     /** Guest side: use `conn` (see qr.js connFromChannel) as this link's transport. Resolves on open. */
