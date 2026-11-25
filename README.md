@@ -22,6 +22,12 @@ the same two-digit room code.
   direction (both sides, out of the lockers, up from the front) and spread around a janitor
   instead of queueing on one side. Each phone follows its own janitor; the host simulates
   everything and sends ~15 snapshots per second.
+- **Katana-Küche** (`ninja.html`): up to six ninjas share one bamboo dojo and slice the fruit
+  and vegetables that fall from the sky. Swipe in a direction and the ninja jumps there; up
+  to three jumps in a row, every cut in the air gives one back. In the air the ninja rolls
+  and the spinning katana cuts everything in reach (tap on the ground: a spin in place).
+  Combos score a bonus, wasp nests cost points and stun, a katana hit knocks other ninjas
+  away. 75-second rounds; best played in portrait.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.
@@ -52,7 +58,7 @@ PORT_PREFIX=30 docker compose up -d
 ```
 
 Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi).
-Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`.
+Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`, `/ninja.html#42`.
 Peer-to-peer mode can be tried locally with `http://<host>:3080/?net=p2p`.
 
 ## Run without a server (static hosting)

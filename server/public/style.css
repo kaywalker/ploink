@@ -1059,5 +1059,20 @@ body.brawl { background: #14162b; }
   .brawl .control-banner { font-size: 44px; }
 }
 
-/* Five game modes on the join screen */
+/* An odd number of game modes: the last one spans the row */
 .mode-picker .mode-option:last-of-type:nth-of-type(odd) { grid-column: 1 / -1; }
+
+/* ---------- Katana-Küche (ninja) ---------- */
+
+body.ninja { background: #1b1035; }
+
+.ninja-top .badge { cursor: default; }
+.score-chip { min-width: 56px; }
+.score-chip small { font-weight: 700; color: var(--text); }
+.score-chip.me { background: rgba(255, 255, 255, 0.16); }
+
+.fruit-legend { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+
+@media (orientation: landscape) {
+  .ninja .lobby { align-items: start; }
+}
