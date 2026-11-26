@@ -119,7 +119,7 @@
   let burnReadyAt = 0;
   let lastSizzle = 0;
   let spinTurn = 0;                 // how far the own katana turned since the last "wusch"
-  let lastRot = 0;                 // little coins flying from a cut fruit to the ninja
+  let lastRot = 0;                 // little coins flying from a cut fruit into the score
   const cutSpots = new Map();       // fruit id -> where the own blade cut it (until the hub confirms)
   const items = new Map();          // id -> power-up bubble (same path formula as fruit)
   const myEffects = {};             // item kind -> active until (performance.now)
@@ -791,7 +791,7 @@
         text: mine ? label : `${msg.by.name} ${label}`,
         color: msg.points < 0 ? '#ff5d73' : msg.by.color,
       });
-      // The points fly to the ninja as coins: more points, more coins.
+      // The points fly into the score as coins: more points, more coins.
       if (msg.points > 0) {
         const count = Math.max(3, Math.min(12, Math.round(msg.points / 5)));
         spawnCoins(at.x, at.y, mine ? count : Math.ceil(count / 2), msg.by.id, mine);
@@ -940,15 +940,35 @@
     }
   }
 
-  /** Coins burst out, then home in on their ninja and get collected there. */
+  /**
+   * Where a ninja's coins are collected, in world units: the own ones fly into the
+   * points badge top left, the others into that ninja's score chip (the canvas lies
+   * under the HUD, so the coins vanish into it). Falls back to the ninja itself.
+   */
+  function coinTarget(id, list) {
+    const el = id === me.id ? $('hud-score').parentElement : $('team').querySelector(`[data-id="${id}"]`);
+    if (el && el.getClientRects().length) {
+      const r = el.getBoundingClientRect();
+      const c = canvas.getBoundingClientRect();
+      const px = (id === me.id ? r.left + Math.min(r.width / 2, 18) : r.left + r.width / 2) - c.left;
+      const py = r.top + r.height / 2 - c.top;
+      return { x: (px - ox) / S, y: (gy - py) / S };
+    }
+    const n = id === me.id ? ninja : list.find((o) => o.id === id);
+    return n ? { x: n.x, y: n.y + 0.1 } : null;
+  }
+
+  /** Coins burst out, then home in on their score in the HUD and get collected there. */
   function updateCoins(dt, list) {
     let arrived = false;
+    const targets = new Map();
     for (let i = coins.length - 1; i >= 0; i--) {
       const c = coins[i];
       c.age += dt;
       if (c.age < 0) continue; // staggered start
-      const target = c.targetId === me.id ? ninja : list.find((o) => o.id === c.targetId);
-      if (!target || c.age > 2.5) {
+      if (!targets.has(c.targetId)) targets.set(c.targetId, coinTarget(c.targetId, list));
+      const target = targets.get(c.targetId);
+      if (!target || c.age > 3) {
         coins.splice(i, 1);
         continue;
       }
@@ -965,8 +985,8 @@
       // Home in, faster and faster
       const pull = Math.min(1, dt * (5 + (c.age - 0.18) * 40));
       c.x += (target.x - c.x) * pull;
-      c.y += (target.y + 0.1 - c.y) * pull;
-      if (Math.hypot(target.x - c.x, target.y + 0.1 - c.y) < 0.3) {
+      c.y += (target.y - c.y) * pull;
+      if (Math.hypot(target.x - c.x, target.y - c.y) < 0.3) {
         coins.splice(i, 1);
         particles.push({ x: c.x, y: c.y, vx: 0, vy: 0.6, life: 1, decay: 4, color: '#fff3b0', size: c.size * 0.9, g: 0 });
         if (c.mine) arrived = true;
@@ -1179,6 +1199,7 @@
     $('team').replaceChildren(...sorted.map((p) => {
       const chip = document.createElement('span');
       chip.className = 'team-chip score-chip';
+      chip.dataset.id = p.id;
       chip.style.setProperty('--chip-color', p.color);
       const name = document.createElement('b');
       name.textContent = p.id === me.id ? 'du' : p.name;
@@ -2248,6 +2269,8 @@
     get paused() { return !!pausedSince; },
     setMenu,
     gameNow,
+    coins,
+    spawnCoins,
     onFrame: null, // tests can capture frames at exact animation moments
   };
 })();
