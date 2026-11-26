@@ -197,12 +197,43 @@ window.PloinkSfx = (() => {
     banana: 'soft', eggplant: 'soft',
   };
 
-  /** One metal clank: a few random inharmonic partials and a short bright noise. */
-  function clank(at, level) {
-    for (let i = 0; i < 4; i++) {
-      tone({ from: 900 + Math.random() * 3300, at, attack: 0.001, decay: 0.08 + Math.random() * 0.12, peak: level * (0.35 - i * 0.06), wet: 0.4 });
+  /**
+   * Struck sheet metal: a short noise burst through narrow resonances at inharmonic
+   * frequencies, like a dustbin lid or a metal plate. `size` < 1 sounds smaller/higher.
+   */
+  function metal(at, level, size = 1, ring = 0.3) {
+    const t = ctx.currentTime + at;
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const exciter = ctx.createGain();
+    exciter.gain.setValueAtTime(0.0001, t);
+    exciter.gain.exponentialRampToValueAtTime(1, t + 0.001);
+    exciter.gain.exponentialRampToValueAtTime(0.0001, t + 0.012);
+    src.connect(exciter);
+    const out = envelope(t, level, 0.001, ring, 0.45);
+    const r = vary(0.06) / size;
+    for (const f of [530, 1130, 1720, 2390, 3170, 4410, 5870]) {
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = f * r;
+      band.Q.value = 28;
+      const gain = ctx.createGain();
+      gain.gain.value = 6; // narrow filters pass little energy; bring it back up
+      exciter.connect(band);
+      band.connect(gain);
+      gain.connect(out);
     }
-    hiss({ from: 2500 + Math.random() * 2000, q: 3, at, attack: 0.001, decay: 0.025, peak: level, wet: 0.3 });
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + 0.05);
+  }
+
+  /** One metal clank: sheet-metal clang, a few random partials and a short bright noise. */
+  function clank(at, level) {
+    metal(at, level * 1.4, 0.8 + Math.random() * 0.5, 0.18 + Math.random() * 0.15);
+    for (let i = 0; i < 3; i++) {
+      tone({ from: 900 + Math.random() * 3300, at, attack: 0.001, decay: 0.06 + Math.random() * 0.1, peak: level * (0.3 - i * 0.06), wet: 0.4 });
+    }
+    hiss({ from: 2500 + Math.random() * 2000, q: 3, at, attack: 0.001, decay: 0.02, peak: level * 0.8, wet: 0.3 });
   }
 
   let distortion = null;
@@ -500,6 +531,7 @@ window.PloinkSfx = (() => {
       crack.connect(band);
       band.connect(drive);
       drive.connect(envelope(t, 0.55, 0.001, 0.09, 0.4));
+      metal(hit, 0.7, 1, 0.55); // the big sheet-metal clang
       crack.start(t, Math.random() * 0.5);
       crack.stop(t + 0.15);
       tone({ from: 120 * p, to: 42 * p, at: hit, attack: 0.002, decay: 0.5, peak: 0.6, wet: 0.3 });
@@ -510,9 +542,9 @@ window.PloinkSfx = (() => {
       bus.connect(master);
       // A fast tremble makes the steel clang and rattle instead of ringing smoothly.
       const tremble = ctx.createOscillator();
-      tremble.frequency.value = 23 * p;
+      tremble.frequency.value = 17 * p;
       const trembleDepth = ctx.createGain();
-      trembleDepth.gain.value = 0.3;
+      trembleDepth.gain.value = 0.45;
       tremble.connect(trembleDepth);
       trembleDepth.connect(bus.gain);
       tremble.start(t);
@@ -559,7 +591,8 @@ window.PloinkSfx = (() => {
       hiss({ from: 5200 * p, to: 1400 * p, q: 8, at: hit + 0.01, attack: 0.005, decay: 0.3, peak: 0.28, wet: 0.4 });
 
       // Clatter: the blades rattle against each other a few more times
-      [0.05, 0.11, 0.2, 0.32].forEach((d, i) => clank(hit + d + Math.random() * 0.02, 0.32 * (1 - i * 0.2)));
+      // like metal bouncing on: hits come faster and quieter
+      [0.06, 0.15, 0.23, 0.3, 0.36, 0.41, 0.45].forEach((d, i) => clank(hit + d + Math.random() * 0.015, 0.4 * (1 - i * 0.12)));
 
       // 4. Sparks crackling away
       for (let i = 0; i < 16; i++) {
