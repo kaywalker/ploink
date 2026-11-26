@@ -22,6 +22,8 @@ window.PloinkSfx = (() => {
   const plucks = new Map(); // rounded frequency -> rendered pluck buffer
   let muted = false;
   try { muted = localStorage.getItem(STORAGE_KEY) === 'off'; } catch { /* private mode */ }
+  let route = null; // while the music schedules notes, they go into the music bus
+  const afterUnlock = [];
 
   function unlock() {
     if (!ctx) {
@@ -59,6 +61,7 @@ window.PloinkSfx = (() => {
       setTimeout(() => SCALE.forEach(pluckBuffer), 50);
     }
     if (ctx.state === 'suspended') ctx.resume();
+    afterUnlock.forEach((fn) => fn());
   }
   window.addEventListener('pointerdown', unlock, { capture: true });
   window.addEventListener('keydown', unlock, { capture: true });
@@ -72,7 +75,7 @@ window.PloinkSfx = (() => {
     g.gain.setValueAtTime(0.0001, start);
     g.gain.exponentialRampToValueAtTime(peak, start + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, start + attack + decay);
-    g.connect(master);
+    g.connect(route || master);
     if (wet > 0) {
       const send = ctx.createGain();
       send.gain.value = wet;
@@ -165,7 +168,168 @@ window.PloinkSfx = (() => {
 
   const note = (step) => SCALE[Math.max(0, Math.min(SCALE.length - 1, step))];
 
+  /** Shakuhachi-like flute: a breathy sine with a slow vibrato that swells in. */
+  function flute(freq, { at = 0, length = 2, peak = 0.08 } = {}) {
+    const t = ctx.currentTime + at;
+    const osc = ctx.createOscillator();
+    osc.frequency.setValueAtTime(freq, t);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 5;
+    const vibDepth = ctx.createGain();
+    vibDepth.gain.setValueAtTime(0, t);
+    vibDepth.gain.linearRampToValueAtTime(freq * 0.012, t + length * 0.6);
+    vib.connect(vibDepth);
+    vibDepth.connect(osc.frequency);
+    const g = envelope(t, peak, length * 0.3, length * 0.7, 0.7);
+    osc.connect(g);
+    osc.start(t);
+    vib.start(t);
+    osc.stop(t + length + 0.1);
+    vib.stop(t + length + 0.1);
+    hiss({ from: freq * 2, q: 4, at, attack: length * 0.3, decay: length * 0.7, peak: peak * 0.35, wet: 0.7 });
+  }
+
+  /**
+   * Background music: a looping dojo groove in the style of the round-end phrase.
+   * Taiko "don" and rim "ka" in a 16-step bar, a koto bass, a koto melody built from
+   * short motifs (repeated and varied, a new one every 8 bars) and long flute notes.
+   * Notes are scheduled slightly ahead on the audio clock, so timing stays tight.
+   * `setIntensity(1)` speeds it up and adds drums for the final seconds.
+   */
+  const music = (() => {
+    const MUSIC_KEY = 'ploink-music';
+    const MUSIC_VOLUME = 0.42;
+    const BASE_BPM = 96;
+    const FAST_BPM = 124;
+    let musicOff = false;
+    try { musicOff = localStorage.getItem(MUSIC_KEY) === 'off'; } catch { /* private mode */ }
+    let wanted = false;
+    let bus = null;
+    let timer = null;
+    let step = 0;
+    let bar = 0;
+    let nextTime = 0;
+    let bpm = BASE_BPM;
+    let intensity = 0;
+    let motifs = null;
+
+    // Rhythms for one bar of melody: the 16th-note steps that get a note.
+    const RHYTHMS = [
+      [0, 3, 6, 8, 11, 14], [0, 2, 4, 8, 10, 12], [0, 6, 8, 10, 14], [0, 3, 4, 8, 12, 15], [2, 4, 6, 10, 12],
+    ];
+
+    /** One bar of melody: a random walk on the scale that ends on D or A. */
+    function makeBar(start) {
+      const rhythm = RHYTHMS[Math.floor(Math.random() * RHYTHMS.length)];
+      let degree = start;
+      const notes = new Array(16).fill(null);
+      rhythm.forEach((pos, i) => {
+        if (i > 0) degree = Math.max(0, Math.min(9, degree + [-2, -1, -1, 1, 1, 2, 0][Math.floor(Math.random() * 7)]));
+        if (i === rhythm.length - 1) degree = [0, 3, 5][Math.floor(Math.random() * 3)];
+        notes[pos] = degree;
+      });
+      return notes;
+    }
+
+    /** Two motifs, played A A B A' over four bars; A' ends one step higher. */
+    function newMotifs() {
+      const a = makeBar(5);
+      const b = makeBar(3);
+      const a2 = a.map((d, i) => (d === null ? null : i >= 12 ? Math.min(10, d + 1) : d));
+      return [a, a, b, a2];
+    }
+
+    function scheduleStep(at) {
+      if (!motifs || (step === 0 && bar % 8 === 0)) motifs = newMotifs();
+      const fast = intensity > 0;
+      // Taiko groove
+      if (step === 0) taiko({ at, pitch: 0.95, peak: bar % 4 === 0 ? 0.55 : 0.42 });
+      if (step === 10 || (fast && (step === 6 || step === 8))) taiko({ at, pitch: 1.1, peak: 0.3 });
+      if (step === 4 || step === 12 || step === 14 || (fast && step % 2 === 0 && step !== 0)) {
+        hiss({ filter: 'highpass', from: 2600, at, attack: 0.001, decay: 0.03, peak: 0.12, wet: 0.2 });
+        tone({ from: 1250, at, attack: 0.001, decay: 0.04, peak: 0.035, wet: 0.2 });
+      }
+      // Koto bass
+      if (step === 0) pluck(SCALE[0] / 2, { at, peak: 0.28, wet: 0.3 });
+      if (step === 8 && bar % 2 === 1) pluck(SCALE[3] / 2, { at, peak: 0.2, wet: 0.3 });
+      // Koto melody
+      const degree = motifs[bar % 4][step];
+      if (degree !== null) pluck(note(degree), { at, peak: 0.2, wet: 0.45 });
+      // Flute, every four bars
+      if (step === 0 && bar % 4 === 2) flute(note([5, 3, 2, 4][Math.floor(bar / 4) % 4]), { at, length: (60 / bpm) * 7, peak: 0.07 });
+    }
+
+    function tick() {
+      if (!ctx) return;
+      route = bus;
+      while (nextTime < ctx.currentTime + 0.25) {
+        scheduleStep(Math.max(0, nextTime - ctx.currentTime));
+        nextTime += 60 / bpm / 4;
+        step = (step + 1) % 16;
+        if (step === 0) {
+          bar++;
+          bpm += ((intensity > 0 ? FAST_BPM : BASE_BPM) - bpm) * 0.6;
+        }
+      }
+      route = null;
+    }
+
+    function begin() {
+      if (!wanted || musicOff || timer || !ctx) return;
+      if (!bus) {
+        bus = ctx.createGain();
+        bus.connect(master);
+      }
+      bus.gain.cancelScheduledValues(ctx.currentTime);
+      bus.gain.setValueAtTime(0.0001, ctx.currentTime);
+      bus.gain.exponentialRampToValueAtTime(MUSIC_VOLUME, ctx.currentTime + 1.2);
+      step = 0;
+      bar = 0;
+      motifs = null;
+      bpm = intensity > 0 ? FAST_BPM : BASE_BPM;
+      nextTime = ctx.currentTime + 0.1;
+      timer = setInterval(tick, 50);
+      tick();
+    }
+
+    function end() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      if (bus && ctx) {
+        bus.gain.cancelScheduledValues(ctx.currentTime);
+        bus.gain.setValueAtTime(bus.gain.value, ctx.currentTime);
+        bus.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+      }
+    }
+
+    afterUnlock.push(begin);
+
+    return {
+      start() {
+        wanted = true;
+        begin();
+      },
+      stop() {
+        wanted = false;
+        end();
+      },
+      setIntensity(level) {
+        intensity = level > 0 ? 1 : 0;
+      },
+      get playing() { return !!timer; },
+      get off() { return musicOff; },
+      setOff(value) {
+        musicOff = !!value;
+        try { localStorage.setItem(MUSIC_KEY, musicOff ? 'off' : 'on'); } catch { /* private mode */ }
+        if (musicOff) end();
+        else begin();
+      },
+    };
+  })();
+
   const sfx = {
+    music,
     /** Swipe jump: a breathy whoosh, a little brighter for air jumps. */
     jump(inAir) {
       if (!ready()) return;

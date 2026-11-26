@@ -41,5 +41,23 @@
     });
   });
 
+  // Background music: start/stop and the faster final-seconds mode.
+  const musicToggle = document.getElementById('music-toggle');
+  const musicFast = document.getElementById('music-fast');
+  let fast = false;
+  musicToggle.addEventListener('click', () => {
+    setTimeout(() => {
+      if (SFX.music.off) SFX.music.setOff(false);
+      if (SFX.music.playing) SFX.music.stop();
+      else SFX.music.start();
+      musicToggle.textContent = SFX.music.playing ? '⏹ Musik stoppen' : '🎵 Musik starten';
+    }, 30);
+  });
+  musicFast.addEventListener('click', () => {
+    fast = !fast;
+    SFX.music.setIntensity(fast ? 1 : 0);
+    musicFast.textContent = fast ? '▶️ Normales Tempo' : '⏩ Schlussphase (schneller)';
+  });
+
   render();
 })();

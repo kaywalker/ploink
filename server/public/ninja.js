@@ -314,11 +314,14 @@
       otherStars.clear();
     }
 
+    if (msg.phase !== 'playing') SFX.music.stop();
     if (msg.phase === 'lobby') {
       clearTimeout(hintTimer);
       hint.classList.remove('faded');
     } else if (msg.phase === 'playing' && previous !== 'playing') {
       SFX.go();
+      SFX.music.setIntensity(0);
+      SFX.music.start();
       clearTimeout(hintTimer);
       hintTimer = setTimeout(() => hint.classList.add('faded'), 8000);
     }
@@ -922,6 +925,7 @@
       const left = Math.max(0, Math.ceil((state.phaseEndsAt - now) / 1000));
       const text = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       if ($('hud-time').textContent !== text) $('hud-time').textContent = text;
+      SFX.music.setIntensity(left <= 10 ? 1 : 0); // the final seconds speed up
     } else if (state.phase === 'countdown') {
       const left = String(Math.max(1, Math.ceil((state.phaseEndsAt - now) / 1000)));
       if (countdownEl.textContent !== left) {
@@ -1762,6 +1766,19 @@
     renderSound();
   });
   renderSound();
+
+  // Background music on/off, separate from the sound effects.
+  const musicBtn = $('music');
+  const renderMusic = () => {
+    musicBtn.classList.toggle('off', SFX.music.off);
+    musicBtn.setAttribute('aria-label', SFX.music.off ? 'Musik einschalten' : 'Musik ausschalten');
+  };
+  musicBtn.addEventListener('click', () => {
+    SFX.music.setOff(!SFX.music.off);
+    if (!SFX.music.off && state && state.phase === 'playing') SFX.music.start();
+    renderMusic();
+  });
+  renderMusic();
 
   resize();
   connect();

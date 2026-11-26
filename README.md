@@ -32,7 +32,8 @@ the same two-digit room code.
   (the sky is busy with fruit) and are collected by touching them: giant katana (longer reach), double points, a shield that
   blocks one kick or wasp nest, turbo jumps, and three shuriken: double-tap to throw one
   towards the tapped spot; it slices fruit on its way and knocks a ninja away (a spinning
-  katana deflects it). Synthesized sound effects (`sfx.js`, Web Audio) with a mute button;
+  katana deflects it). Synthesized sound effects and a generative dojo background music (`sfx.js`,
+  Web Audio; faster in the last 10 seconds) with separate sound and music buttons;
   `sounds.html` plays each one on its own. 75-second rounds; best played in portrait.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
