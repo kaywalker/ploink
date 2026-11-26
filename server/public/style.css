@@ -1080,6 +1080,8 @@ body.ninja { background: #1b1035; }
 .ninja-timer { justify-self: center; grid-column: 2; }
 .ninja-timer strong { font-size: 18px; }
 .ninja-top .ninja-menu-btn {
+  position: relative;
+  z-index: 16;                /* above the lobby and the open menu's backdrop */
   grid-column: 3;
   justify-self: end;
   pointer-events: auto;
@@ -1164,6 +1166,9 @@ body.ninja { background: #1b1035; }
 /* Messages sit on the floor planks: the sky above is where the action is. */
 .ninja .toasts { top: auto; bottom: calc(var(--safe-bottom) + 3px); }
 .ninja .toast { padding: 3px 10px; font-size: 11px; background: rgba(20, 10, 30, 0.7); }
+
+/* Room for the menu button above the lobby card. */
+.ninja .lobby { padding-top: calc(var(--safe-top) + 52px); }
 
 @media (orientation: landscape) {
   .ninja .lobby { align-items: start; }
