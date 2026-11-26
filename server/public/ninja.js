@@ -112,6 +112,8 @@
   const particles = [];
   const splats = [];
   const popups = [];
+  const coins = [];                 // little coins flying from a cut fruit to the ninja
+  const cutSpots = new Map();       // fruit id -> where the own blade cut it (until the hub confirms)
   const items = new Map();          // id -> power-up bubble (same path formula as fruit)
   const myEffects = {};             // item kind -> active until (performance.now)
   let myStars = 0;                  // shuriken left to throw
@@ -518,6 +520,7 @@
       const angle = Math.atan2(dy, dx);
       fruits.delete(f.id);
       sliceFruit(f, pos, angle);
+      cutSpots.set(f.id, { x: pos.x, y: pos.y });
       if (f.type === 'nest') SFX.buzz();
       else SFX.cut(1, f.type);
       sendPos(now, true);
@@ -663,6 +666,7 @@
           fruits.delete(f.id);
           const angle = Math.atan2(st.dy, st.dx);
           sliceFruit(f, fp, angle);
+          cutSpots.set(f.id, { x: fp.x, y: fp.y });
           SFX.cut(1, f.type);
           claimForStar(st, { type: 'cut', id: f.id, x: round2(pos.x), y: round2(pos.y), angle: round2(angle) });
         }
@@ -728,13 +732,104 @@
     const mine = msg.by.id === me.id;
     if (mine && msg.points > 0) SFX.combo(msg.chain, msg.points);
     else if (f) SFX.cut(0.4, f.type);
-    const at = pos || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
+    const spot = cutSpots.get(msg.id);
+    cutSpots.delete(msg.id);
+    const at = pos || spot || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
     if (at) {
       popups.push({
         x: at.x, y: at.y + 0.4, life: 1,
         text: mine ? label : `${msg.by.name} ${label}`,
         color: msg.points < 0 ? '#ff5d73' : msg.by.color,
       });
+      // The points fly to the ninja as coins: more points, more coins.
+      if (msg.points > 0) {
+        const count = Math.max(3, Math.min(12, Math.round(msg.points / 5)));
+        spawnCoins(at.x, at.y, mine ? count : Math.ceil(count / 2), msg.by.id, mine);
+      }
+    }
+    if (cutSpots.size > 50) cutSpots.clear(); // claims the hub turned down
+  }
+
+  // --- Coins --------------------------------------------------------------------
+  function spawnCoins(x, y, count, targetId, mine) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = 2.5 + Math.random() * 3;
+      coins.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v + 2, age: -i * 0.025, targetId,
+        size: mine ? 0.17 : 0.12, spin: Math.random() * 6, mine,
+      });
+    }
+  }
+
+  /** Coins burst out, then home in on their ninja and get collected there. */
+  function updateCoins(dt, list) {
+    let arrived = false;
+    for (let i = coins.length - 1; i >= 0; i--) {
+      const c = coins[i];
+      c.age += dt;
+      if (c.age < 0) continue; // staggered start
+      const target = c.targetId === me.id ? ninja : list.find((o) => o.id === c.targetId);
+      if (!target || c.age > 2.5) {
+        coins.splice(i, 1);
+        continue;
+      }
+      c.spin += dt * 14;
+      if (c.age < 0.18) {
+        // Burst: fly apart, slowed by drag and gravity
+        c.vy -= 9 * dt;
+        c.vx *= 1 - 3 * dt;
+        c.vy *= 1 - 3 * dt;
+        c.x += c.vx * dt;
+        c.y += c.vy * dt;
+        continue;
+      }
+      // Home in, faster and faster
+      const pull = Math.min(1, dt * (5 + (c.age - 0.18) * 40));
+      c.x += (target.x - c.x) * pull;
+      c.y += (target.y + 0.1 - c.y) * pull;
+      if (Math.hypot(target.x - c.x, target.y + 0.1 - c.y) < 0.3) {
+        coins.splice(i, 1);
+        particles.push({ x: c.x, y: c.y, vx: 0, vy: 0.6, life: 1, decay: 4, color: '#fff3b0', size: c.size * 0.9, g: 0 });
+        if (c.mine) arrived = true;
+      }
+    }
+    if (arrived) bumpScore();
+  }
+
+  let scoreBumpTimer = null;
+  function bumpScore() {
+    const badge = $('hud-score').parentElement;
+    badge.classList.remove('bump');
+    void badge.offsetWidth; // restart the animation
+    badge.classList.add('bump');
+    clearTimeout(scoreBumpTimer);
+    scoreBumpTimer = setTimeout(() => badge.classList.remove('bump'), 300);
+  }
+
+  function drawCoins() {
+    for (const c of coins) {
+      if (c.age < 0) continue;
+      const px = sx(c.x);
+      const py = sy(c.y);
+      const r = c.size * S;
+      const flip = Math.abs(Math.cos(c.spin)) * 0.85 + 0.15; // turning coin
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.scale(flip, 1);
+      ctx.fillStyle = '#d99a1e';
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.78, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.beginPath();
+      ctx.arc(-r * 0.3, -r * 0.3, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -1775,6 +1870,7 @@
       drawNinja({ ...ninja, stun }, me.color, '▼ du', now, { isMe: true, spinning: bladeActive(now), eff: myBits(now) });
     }
     drawStars(now);
+    drawCoins();
     drawEffects();
   }
 
@@ -1817,6 +1913,7 @@
     if (now - lastPosSent >= POS_INTERVAL_MS) sendPos(now, false);
 
     updateEffects(dt);
+    updateCoins(dt, list);
     updateClocks();
     draw(now, list);
     if (window.__ninja && window.__ninja.onFrame) window.__ninja.onFrame(now);
