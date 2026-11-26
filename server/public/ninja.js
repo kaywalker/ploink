@@ -929,12 +929,14 @@
   }
 
   // --- Coins --------------------------------------------------------------------
+  const COIN_DROP_S = 0.55;         // coins pop out and tumble down this long before they fly off
+
   function spawnCoins(x, y, count, targetId, mine) {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const v = 2.5 + Math.random() * 3;
       coins.push({
-        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v + 2, age: -i * 0.025, targetId,
+        x, y, vx: Math.cos(a) * v * 0.8, vy: Math.sin(a) * v * 0.5 + 1.5, age: -i * 0.025, targetId,
         size: mine ? 0.17 : 0.12, spin: Math.random() * 6, mine,
       });
     }
@@ -968,22 +970,25 @@
       if (c.age < 0) continue; // staggered start
       if (!targets.has(c.targetId)) targets.set(c.targetId, coinTarget(c.targetId, list));
       const target = targets.get(c.targetId);
-      if (!target || c.age > 3) {
+      if (!target || c.age > 3.5) {
         coins.splice(i, 1);
         continue;
       }
       c.spin += dt * 14;
-      if (c.age < 0.18) {
-        // Burst: fly apart, slowed by drag and gravity
-        c.vy -= 9 * dt;
-        c.vx *= 1 - 3 * dt;
-        c.vy *= 1 - 3 * dt;
+      if (c.age < COIN_DROP_S) {
+        // Pop out of the fruit and fall a little, like real coins (bouncing off the floor)
+        c.vy -= 18 * dt;
+        c.vx *= 1 - 1.5 * dt;
         c.x += c.vx * dt;
         c.y += c.vy * dt;
+        if (c.y < c.size) {
+          c.y = c.size;
+          c.vy = Math.abs(c.vy) * 0.4;
+        }
         continue;
       }
-      // Home in, faster and faster
-      const pull = Math.min(1, dt * (5 + (c.age - 0.18) * 40));
+      // Then home in on the score, faster and faster
+      const pull = Math.min(1, dt * (3 + (c.age - COIN_DROP_S) * 40));
       c.x += (target.x - c.x) * pull;
       c.y += (target.y - c.y) * pull;
       if (Math.hypot(target.x - c.x, target.y - c.y) < 0.3) {
