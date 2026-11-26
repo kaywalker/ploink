@@ -32,7 +32,9 @@ the same two-digit room code.
   (the sky is busy with fruit) and are collected by touching them: giant katana (longer reach), double points, a shield that
   blocks one kick or wasp nest, turbo jumps, and three shuriken: double-tap to throw one
   towards the tapped spot; it slices fruit on its way and knocks a ninja away (a spinning
-  katana deflects it). Synthesized sound effects and a generative dojo background music (`sfx.js`,
+  katana deflects it). Every ~25 s the floor glows and turns to lava for 8 s:
+  landing in it costs 20 points and flings the ninja up, fruit falling in burns; the
+  platforms stay safe. Synthesized sound effects and a generative dojo background music (`sfx.js`,
   Web Audio; faster in the last 10 seconds) with separate sound and music buttons;
   `sounds.html` plays each one on its own. Every phone keeps its own best score per
   player name; the lobby shows the bests of everybody in the room, and after a round it

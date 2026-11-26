@@ -10,6 +10,7 @@ Object.assign(hub.CONFIG, {
   countdownMs: 50,
   roundMs: 9000,
   salvoEveryMs: 60_000,
+  lavaFirstMs: 60_000,          // lava is started by hand below
 });
 
 function fakeClient(name) {
@@ -303,6 +304,43 @@ async function main() {
   await sleep(30);
   assert.equal(b.take((m) => m.type === 'star'), null, 'no stars, no throw');
   console.log('✓ no throw without shuriken');
+
+  // Lava: announced in the state, burns ninjas on the floor (not below zero, with a cooldown).
+  a.drain();
+  room.startLava(Date.now() - hub.CONFIG.lavaWarnMs); // hot right now
+  const lavaState = await a.next((m) => m.type === 'state' && m.lava);
+  assert.ok(lavaState.lava.startAt <= Date.now() && lavaState.lava.endAt > Date.now());
+  a.send({ type: 'pos', x: 3, y: 0.5, rot: 0, air: false, facing: 1 });
+  anna.score = 50;
+  anna.lavaReadyAt = 0;
+  await sleep(20);
+  a.send({ type: 'lava' });
+  const burned = await b.next((m) => m.type === 'burned');
+  assert.equal(burned.by.id, anna.id);
+  assert.equal(burned.points, hub.CONFIG.lavaPenalty);
+  assert.equal(anna.score, 50 - hub.CONFIG.lavaPenalty);
+  a.send({ type: 'lava' });
+  await sleep(30);
+  assert.equal(anna.score, 50 - hub.CONFIG.lavaPenalty, 'cooldown after a burn');
+  anna.lavaReadyAt = 0;
+  anna.score = 5;
+  a.send({ type: 'lava' });
+  await b.next((m) => m.type === 'burned' && m.points === 5);
+  assert.equal(anna.score, 0, 'never below zero');
+  anna.lavaReadyAt = 0;
+  a.send({ type: 'pos', x: 3, y: 6, rot: 0, air: true, facing: 1 });
+  await sleep(20);
+  anna.score = 30;
+  a.send({ type: 'lava' });
+  await sleep(30);
+  assert.equal(anna.score, 30, 'high above the floor nothing burns');
+  room.lava = null;
+  a.send({ type: 'pos', x: 3, y: 0.5, rot: 0, air: false, facing: 1 });
+  await sleep(20);
+  a.send({ type: 'lava' });
+  await sleep(30);
+  assert.equal(anna.score, 30, 'no lava, no burn');
+  console.log('✓ lava burns ninjas on the floor, with cooldown and never below zero');
 
   // Every power-up comes once per shuffled bag: ten bubbles hold each kind twice.
   room.itemBag = [];

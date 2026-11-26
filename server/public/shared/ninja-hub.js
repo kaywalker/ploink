@@ -54,6 +54,12 @@
     itemRadius: 0.45,
     giantReach: 1.0,            // extra katana reach with the giant katana
     turboFactor: 1.35,          // jump speed with turbo (applied on the phone)
+    lavaFirstMs: 15_000,        // the floor turns to lava this long into a round …
+    lavaEveryMs: 25_000,        // … and then about this often (warning to warning)
+    lavaWarnMs: 2_000,          // glowing floor before it gets hot
+    lavaMs: 8_000,
+    lavaPenalty: 20,            // points lost when landing in the lava
+    lavaCooldownMs: 1_000,
     starSpeed: 16,              // shuriken flight speed (units/s), straight line, no gravity
     starRange: 10,              // a shuriken vanishes after this distance
     starRadius: 0.3,
@@ -169,6 +175,8 @@
       this.items = new Map();   // power-up bubbles, same path formula as the fruit
       this.stars = new Map();   // shuriken in flight
       this.itemBag = [];        // shuffled power-up kinds still to come
+      this.lava = null;         // { warnAt, startAt, endAt } on the hub clock while it is due
+      this.nextLavaAt = 0;
       this.nextItemAt = 0;
       this.phase = 'lobby';     // lobby | countdown | playing
       this.phaseEndsAt = 0;
@@ -201,6 +209,7 @@
           id: p.id, name: p.name, color: p.color, score: p.score, best: p.best, connected: !!p.socket,
         })),
         lastResults: this.lastResults,
+        lava: this.lava,
       });
     }
 
@@ -232,6 +241,8 @@
       this.spawnBudget = 1;
       this.nextSalvoAt = now + CONFIG.salvoEveryMs;
       this.nextItemAt = now + CONFIG.itemEveryMs * 0.6;
+      this.lava = null;
+      this.nextLavaAt = now + CONFIG.lavaFirstMs;
       for (const p of this.players.values()) {
         p.score = 0;
         p.chain = 0;
@@ -252,6 +263,7 @@
       this.fruits.clear();
       this.items.clear();
       this.stars.clear();
+      this.lava = null;
       // Each phone keeps its own best per name; the hub only collects them for the
       // leaderboard and tells everybody where this round's scores landed.
       for (const p of this.players.values()) p.best = Math.max(p.best, p.score);
@@ -292,6 +304,11 @@
         if (now >= this.nextItemAt) {
           this.nextItemAt = now + CONFIG.itemEveryMs * rand(0.7, 1.3);
           this.spawnItem(now);
+        }
+        if (!this.lava && now >= this.nextLavaAt) this.startLava(now);
+        else if (this.lava && now > this.lava.endAt) {
+          this.lava = null;
+          this.broadcastState();
         }
       }
       // Ninja positions go out in every phase except the lobby, which covers the dojo.
@@ -385,6 +402,31 @@
         type: 'collected', id: item.id, kind: item.kind, ms: def.ms, stars: player.stars,
         by: { id: player.id, name: player.name, color: player.color },
       });
+    }
+
+    /** Announce the next lava phase: glowing warning, then hot floor. */
+    startLava(now) {
+      const startAt = now + CONFIG.lavaWarnMs;
+      this.lava = { warnAt: now, startAt, endAt: startAt + CONFIG.lavaMs };
+      this.nextLavaAt = now + CONFIG.lavaEveryMs;
+      this.broadcastState();
+    }
+
+    /** The phone says its ninja touched the lava floor: lose points (not below zero). */
+    burn(player) {
+      if (this.phase !== 'playing' || !this.lava || !player.pos) return;
+      const now = Date.now();
+      if (now < this.lava.startAt - 300 || now > this.lava.endAt + 300) return;
+      if (now < player.lavaReadyAt || player.pos.y > 1.5) return;
+      player.lavaReadyAt = now + CONFIG.lavaCooldownMs;
+      const points = Math.min(CONFIG.lavaPenalty, Math.max(0, player.score));
+      player.score -= points;
+      player.chain = 0;
+      this.broadcast({
+        type: 'burned', x: player.pos.x, points,
+        by: { id: player.id, name: player.name, color: player.color },
+      });
+      if (points) this.broadcastState();
     }
 
     /** Throw a shuriken from the ninja's position in direction (dx, dy). */
@@ -613,6 +655,7 @@
       this.stars = 0;           // shuriken left to throw
       this.best = 0;            // personal best, as stored on the player's phone
       this.prevBest = 0;        // best before the current round
+      this.lavaReadyAt = 0;
       this.pos = null;
       this.socket = null;
       this.removeTimer = null;
@@ -710,6 +753,9 @@
           break;
         case 'throw':
           room.throwStar(player, msg);
+          break;
+        case 'lava':
+          room.burn(player);
           break;
         case 'best':
           // The phone's stored personal best for this name (sent on joining).

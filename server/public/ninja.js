@@ -112,7 +112,11 @@
   const particles = [];
   const splats = [];
   const popups = [];
-  const coins = [];                 // little coins flying from a cut fruit to the ninja
+  const coins = [];
+  let lastLava = null;              // latest lava phase from the hub (kept for the cool-down)
+  let lavaPhaseSeen = 'none';
+  let burnReadyAt = 0;
+  let lastSizzle = 0;                 // little coins flying from a cut fruit to the ninja
   const cutSpots = new Map();       // fruit id -> where the own blade cut it (until the hub confirms)
   const items = new Map();          // id -> power-up bubble (same path formula as fruit)
   const myEffects = {};             // item kind -> active until (performance.now)
@@ -285,6 +289,15 @@
         }
         break;
       }
+      case 'burned':
+        if (msg.by.id === me.id) {
+          if (msg.points) shout(`🔥 −${msg.points}`, '#ff8a3d');
+        } else {
+          smoke(msg.x, 0.4, 10);
+          popups.push({ x: msg.x, y: 1.6, life: 1, text: `🔥 ${msg.by.name}`, color: '#ff8a3d' });
+          SFX.sizzle(0.4);
+        }
+        break;
       case 'stunned':
         SFX.buzz();
         ninja.stunnedUntil = performance.now() + msg.ms;
@@ -314,6 +327,8 @@
   function applyState(msg) {
     const previous = state ? state.phase : null;
     state = msg;
+    if (msg.lava) lastLava = msg.lava;
+    if (msg.phase !== 'playing') lastLava = null;
     for (const p of msg.players) playerInfo.set(p.id, { name: p.name, color: p.color });
     const self = msg.players.find((p) => p.id === me.id);
     if (self) me.color = self.color;
@@ -750,6 +765,118 @@
     if (cutSpots.size > 50) cutSpots.clear(); // claims the hub turned down
   }
 
+  // --- Lava -----------------------------------------------------------------------
+  /** 'none' | 'warn' | 'hot' at hub time t. */
+  function lavaPhase(t) {
+    if (!lastLava || t < lastLava.warnAt) return 'none';
+    if (t < lastLava.startAt) return 'warn';
+    if (t <= lastLava.endAt) return 'hot';
+    return 'none';
+  }
+
+  /** Each frame: sounds on phase changes, bubbling, and the own ninja on the hot floor. */
+  function updateLava(now, dt) {
+    const t = serverNow();
+    const phase = lavaPhase(t);
+    if (phase !== lavaPhaseSeen) {
+      if (phase === 'warn') SFX.lavaWarn();
+      if (phase === 'hot') SFX.lavaStart();
+      lavaPhaseSeen = phase;
+    }
+    if (phase !== 'hot') return;
+    if (Math.random() < dt * 2.5) SFX.blub();
+    if (!ninja.air && !ninja.onPlatform && now >= burnReadyAt && state && state.phase === 'playing') {
+      // Feet in the lava: flung up with a smoking bottom; the hub takes the points.
+      burnReadyAt = now + 900;
+      ninja.air = true;
+      ninja.onPlatform = null;
+      ninja.vy = CFG.jumpSpeed * 1.05;
+      ninja.vx = (Math.random() - 0.5) * 4;
+      ninja.spinDir = ninja.vx >= 0 ? 1 : -1;
+      smoke(ninja.x, 0.4, 14);
+      sparks(ninja.x, 0.3, '#ff8a3d', 10);
+      SFX.sizzle(1);
+      vibrate([60, 40, 60]);
+      shout('🔥 Heiß!', '#ff8a3d');
+      sendPos(now, true);
+      send({ type: 'lava' });
+    }
+  }
+
+  function smoke(x, y, count) {
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: x + (Math.random() - 0.5) * 0.6, y, vx: (Math.random() - 0.5) * 0.8, vy: 1 + Math.random() * 1.5,
+        life: 1, decay: 0.9, color: i % 3 ? 'rgba(90, 80, 90, 0.55)' : 'rgba(255, 140, 50, 0.8)', size: 0.12 + Math.random() * 0.12, g: -0.5,
+      });
+    }
+  }
+
+  /** Glowing floor as a warning, then a bubbling lava lake, then a short cool-down. */
+  function drawLava(now) {
+    const t = serverNow();
+    if (!lastLava) return;
+    const phase = lavaPhase(t);
+    const tt = now / 1000;
+    let heat = 0;
+    if (phase === 'warn') heat = (t - lastLava.warnAt) / (lastLava.startAt - lastLava.warnAt);
+    else if (phase === 'hot') heat = 1;
+    else if (t > lastLava.endAt) heat = Math.max(0, 1 - (t - lastLava.endAt) / 1200);
+    if (heat <= 0) return;
+
+    // Heat glow rising from the floor
+    const glow = ctx.createLinearGradient(0, gy, 0, gy - S * 3);
+    glow.addColorStop(0, `rgba(255, 110, 20, ${0.35 * heat})`);
+    glow.addColorStop(1, 'rgba(255, 110, 20, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, gy - S * 3, cssW, S * 3);
+
+    if (phase === 'warn') {
+      // The planks glow, pulsing faster as it gets hot
+      const pulse = 0.5 + 0.5 * Math.sin(tt * (8 + heat * 14));
+      ctx.fillStyle = `rgba(255, 90, 20, ${0.15 + 0.4 * heat * pulse})`;
+      ctx.fillRect(0, gy, cssW, cssH - gy);
+      // Above the name tags of ninjas standing on the floor
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(255, 225, 150, ${0.6 + 0.4 * pulse})`;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+      ctx.shadowBlur = 6;
+      ctx.font = `800 ${Math.max(16, Math.round(S * 0.6))}px system-ui, sans-serif`;
+      ctx.fillText('🔥 Der Boden wird heiß!', cssW / 2, gy - S * 3.1);
+      ctx.font = `700 ${Math.max(12, Math.round(S * 0.36))}px system-ui, sans-serif`;
+      ctx.fillText('Ab auf die Plattformen', cssW / 2, gy - S * 2.5);
+      ctx.shadowBlur = 0;
+      return;
+    }
+
+    // Lava lake with a wavy surface
+    ctx.globalAlpha = heat;
+    const top = gy - S * 0.18;
+    const lava = ctx.createLinearGradient(0, top, 0, cssH);
+    lava.addColorStop(0, '#ffd04a');
+    lava.addColorStop(0.25, '#ff7a1a');
+    lava.addColorStop(1, '#a3150c');
+    ctx.fillStyle = lava;
+    ctx.beginPath();
+    ctx.moveTo(0, cssH);
+    for (let x = 0; x <= cssW + 8; x += 8) {
+      ctx.lineTo(x, top + Math.sin(x * 0.045 + tt * 3) * S * 0.05 + Math.sin(x * 0.11 - tt * 5) * S * 0.03);
+    }
+    ctx.lineTo(cssW, cssH);
+    ctx.closePath();
+    ctx.fill();
+    // Bubbles rising and popping on the surface
+    for (let i = 0; i < 14; i++) {
+      const k = (tt * 0.9 + i * 0.37) % 1;
+      const bx = ((i * 137.5) % (W + 1)) - 0.3;
+      ctx.fillStyle = `rgba(255, 230, 140, ${0.8 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(sx(bx), top - k * S * 0.15, Math.max(1, k * S * 0.16), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // --- Coins --------------------------------------------------------------------
   function spawnCoins(x, y, count, targetId, mine) {
     for (let i = 0; i < count; i++) {
@@ -888,6 +1015,15 @@
       if (t >= f.t0 + HUB.fruitLifetime(f)) {
         fruits.delete(f.id);
         const pos = HUB.fruitPosition(f, t);
+        if (lavaPhase(t) === 'hot') {
+          // Burned in the lava: a puff of smoke and a hiss (not too many hisses at once).
+          smoke(pos.x, 0.2, 8);
+          if (performance.now() - lastSizzle > 180) {
+            lastSizzle = performance.now();
+            SFX.sizzle(0.25);
+          }
+          continue;
+        }
         splats.push({ x: pos.x, r: f.r, color: f.type === 'nest' ? '#8b6440' : FLESH[f.type], life: 1 });
         SFX.splat();
         sparks(pos.x, f.r * 0.5, FLESH[f.type], 6);
@@ -1838,6 +1974,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const t = now / 1000;
     drawDojo(t);
+    drawLava(now);
     const st = serverNow();
     for (const f of fruits.values()) {
       const pos = HUB.fruitPosition(f, st);
@@ -1914,6 +2051,7 @@
 
     updateEffects(dt);
     updateCoins(dt, list);
+    updateLava(now, dt);
     updateClocks();
     draw(now, list);
     if (window.__ninja && window.__ninja.onFrame) window.__ninja.onFrame(now);

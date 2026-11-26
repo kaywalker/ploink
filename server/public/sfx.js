@@ -446,14 +446,24 @@ window.PloinkSfx = (() => {
       taiko({ pitch: 0.8, peak: 0.7 });
       tone({ type: 'triangle', from: note(8), to: note(1), at: 0.04, attack: 0.005, decay: 0.35, peak: 0.12, wet: 0.4 });
     },
-    /** Two blades meet: inharmonic metal ringing out in the room. */
+    /**
+     * Two katanas meet: a sword "tsching!". A hard, very bright metal hit, the blades
+     * scraping along each other, then a long, high, shimmering ring (pairs of slightly
+     * detuned partials beat against each other like real steel).
+     */
     clash() {
       if (!ready()) return;
-      const p = vary(0.05);
-      for (const [f, pk, d] of [[1180, 0.14, 0.9], [1735, 0.1, 0.7], [2510, 0.08, 0.6], [3390, 0.06, 0.45], [4420, 0.04, 0.35]]) {
-        tone({ from: f * p, attack: 0.001, decay: d, peak: pk, wet: 0.6 });
+      const p = vary(0.04);
+      // "Tsch": the hit
+      hiss({ filter: 'highpass', from: 5000 * p, attack: 0.001, decay: 0.03, peak: 0.6, wet: 0.2 });
+      hiss({ from: 3200 * p, q: 3, attack: 0.001, decay: 0.05, peak: 0.35, wet: 0.2 });
+      // Blades scraping along each other
+      hiss({ from: 7500 * p, to: 2600 * p, q: 9, at: 0.01, attack: 0.005, decay: 0.16, peak: 0.28, wet: 0.3 });
+      // "Iiing": high steel ringing out, shimmering
+      for (const [f, pk, d] of [[2380, 0.09, 1.1], [3570, 0.1, 1.3], [4810, 0.07, 0.9], [6230, 0.05, 0.7], [7690, 0.035, 0.5]]) {
+        tone({ from: f * p, to: f * p * 0.992, at: 0.005, attack: 0.002, decay: d, peak: pk, wet: 0.45 });
+        tone({ from: f * p + 5, to: (f * p + 5) * 0.992, at: 0.005, attack: 0.002, decay: d * 0.9, peak: pk * 0.8, wet: 0.45 });
       }
-      hiss({ filter: 'highpass', from: 3500, attack: 0.001, decay: 0.06, peak: 0.35, wet: 0.3 });
     },
     /** Shield takes the hit: a gong. */
     block() {
@@ -466,6 +476,39 @@ window.PloinkSfx = (() => {
     collect() {
       if (!ready()) return;
       [5, 7, 9, 10].forEach((step, i) => pluck(note(step), { at: i * 0.055, peak: 0.24 }));
+    },
+    /** The floor gets hot: a taiko roll that speeds up and swells over two seconds. */
+    lavaWarn() {
+      if (!ready()) return;
+      let at = 0;
+      for (let i = 0; i < 12; i++) {
+        taiko({ at, pitch: 0.9 + i * 0.02, peak: 0.2 + i * 0.04 });
+        at += 0.22 - i * 0.014;
+      }
+      hiss({ filter: 'lowpass', from: 120, to: 260, q: 1, attack: 1.6, decay: 0.4, peak: 0.25, wet: 0.3 });
+    },
+    /** Lava: a deep rumble under a big drum. */
+    lavaStart() {
+      if (!ready()) return;
+      taiko({ pitch: 0.75, peak: 0.9 });
+      hiss({ filter: 'lowpass', from: 220, to: 70, q: 2, attack: 0.05, decay: 1.4, peak: 0.55, wet: 0.4 });
+      tone({ from: 55, to: 38, attack: 0.05, decay: 1.2, peak: 0.35, wet: 0.2 });
+    },
+    /** A lava bubble popping. */
+    blub() {
+      if (!ready()) return;
+      const p = vary(0.25);
+      tone({ from: 85 * p, to: 230 * p, attack: 0.005, decay: 0.09, peak: 0.14, wet: 0.3 });
+      hiss({ filter: 'lowpass', from: 500 * p, attack: 0.003, decay: 0.04, peak: 0.08, wet: 0.2 });
+    },
+    /** Something hits the lava: a hiss with crackles. `volume` < 1 for far or small things. */
+    sizzle(volume = 1) {
+      if (!ready()) return;
+      hiss({ filter: 'highpass', from: 2500, to: 5000, q: 0.7, attack: 0.01, decay: 0.6, peak: 0.32 * volume, wet: 0.2 });
+      for (let i = 0; i < 8; i++) {
+        hiss({ from: 3000 + Math.random() * 3000, q: 2, at: Math.random() * 0.4, attack: 0.001, decay: 0.01, peak: 0.25 * volume, wet: 0 });
+      }
+      tone({ from: 160, to: 70, attack: 0.005, decay: 0.15, peak: 0.25 * volume, wet: 0.2 });
     },
     /** Wasps. */
     buzz() {
