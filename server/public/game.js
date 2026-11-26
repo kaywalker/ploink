@@ -106,7 +106,8 @@
   // Full screen: remembered, every game page goes back to it on the first touch.
   const fullscreenButton = $('fullscreen');
   const fullscreenHint = $('fullscreen-hint');
-  const FS = window.PloinkFullscreen;
+  // Fallback if the script did not load (a content blocker once ate it): no full screen, no crash.
+  const FS = window.PloinkFullscreen || { supported: false, standalone: false, active: false, toggle() {}, onChange() {} };
   const renderFullscreen = () => {
     fullscreenButton.hidden = FS.standalone; // started from the home screen: already without bars
     fullscreenButton.textContent = FS.active ? '⛶ Vollbild beenden' : '⛶ Vollbild';

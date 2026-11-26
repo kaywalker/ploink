@@ -4,16 +4,20 @@
 // The site loads instantly on later visits (playing still needs the PeerJS broker).
 // The game server's health check and WebSockets are never cached.
 
-const CACHE = 'ploink-v9';
+const CACHE = 'ploink-v10';
 const ASSETS = [
   './', 'index.html', 'shooter.html', 'gallery.html', 'control.html', 'brawl.html', 'ninja.html', 'style.css', 'favicon.svg',
-  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js', 'sfx.js', 'sounds.html', 'sounds.js', 'fullscreen.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js', 'sfx.js', 'sounds.html', 'sounds.js', 'screen-mode.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
   'shared/net.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js', 'shared/ninja-hub.js',
   'vendor/peerjs-1.5.5.min.js',
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // One by one: a single file that fails (e.g. eaten by a content blocker) must not stop
+  // the whole update, or browsers stay on the old worker forever.
+  event.waitUntil(caches.open(CACHE)
+    .then((cache) => Promise.allSettled(ASSETS.map((asset) => cache.add(asset))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

@@ -2212,7 +2212,8 @@
 
   // Full screen (hidden where the browser cannot do it, e.g. iPhone Safari).
   const fsBtn = $('fs');
-  const FS = window.PloinkFullscreen;
+  // Fallback if the script did not load (a content blocker once ate it): no full screen, no crash.
+  const FS = window.PloinkFullscreen || { supported: false, standalone: false, active: false, toggle() {}, onChange() {} };
   const renderFs = () => {
     fsBtn.hidden = !FS.supported || FS.standalone;
     renderToggle(fsBtn, FS.active);

@@ -44,7 +44,7 @@ the same two-digit room code.
   it flies into a random other player's screen.
 
 **Full screen:** the start page has a full-screen button; the choice is remembered and
-every game page goes back to full screen on the first touch (`fullscreen.js`). Android
+every game page goes back to full screen on the first touch (`screen-mode.js`). Android
 and iPad support this in the browser; on iPhone, Safari only allows full screen for
 videos, so Ploink runs without browser bars when it is added to the home screen
 (`manifest.webmanifest`, apple-touch-icon).
