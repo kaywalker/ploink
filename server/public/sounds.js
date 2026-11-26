@@ -11,6 +11,8 @@
   const sequences = {
     // A combo run as in the game: every hit 5 points more and one step higher.
     'combo-run': () => [1, 2, 3, 4, 5, 6].forEach((chain, i) => setTimeout(() => SFX.combo(chain, 10 + (chain - 1) * 5), i * 700)),
+    // Spinning in the air: one "wusch" per katana turn (about 2.4 per second).
+    'swish-run': () => [0, 1, 2, 3, 4, 5].forEach((i) => setTimeout(() => SFX.swish(), i * 420)),
     countdown: () => {
       [0, 1, 2].forEach((i) => setTimeout(() => SFX.beep(), i * 1000));
       setTimeout(() => SFX.go(), 3000);

@@ -197,6 +197,14 @@ window.PloinkSfx = (() => {
     banana: 'soft', eggplant: 'soft',
   };
 
+  /** One metal clank: a few random inharmonic partials and a short bright noise. */
+  function clank(at, level) {
+    for (let i = 0; i < 4; i++) {
+      tone({ from: 900 + Math.random() * 3300, at, attack: 0.001, decay: 0.08 + Math.random() * 0.12, peak: level * (0.35 - i * 0.06), wet: 0.4 });
+    }
+    hiss({ from: 2500 + Math.random() * 2000, q: 3, at, attack: 0.001, decay: 0.025, peak: level, wet: 0.3 });
+  }
+
   let distortion = null;
   /** Soft-clipping curve for the clash impact (built once). */
   function distortionCurve() {
@@ -385,6 +393,13 @@ window.PloinkSfx = (() => {
       const p = vary(0.1);
       hiss({ from: (inAir ? 600 : 400) * p, to: (inAir ? 1600 : 1100) * p, q: 1.2, attack: 0.04, decay: 0.16, peak: 0.28, wet: 0.15 });
     },
+    /** One turn of the spinning katana: a "wusch" that swells and fades as it passes. */
+    swish(volume = 1) {
+      if (!ready()) return;
+      const p = vary(0.15);
+      hiss({ from: 450 * p, to: 1900 * p, q: 1.4, attack: 0.07, decay: 0.13, peak: 0.24 * volume, wet: 0.1 });
+      hiss({ from: 1500 * p, to: 3800 * p, q: 3, at: 0.04, attack: 0.04, decay: 0.08, peak: 0.08 * volume, wet: 0.05 });
+    },
     /** Katana spin on the ground. */
     slash() {
       if (!ready()) return;
@@ -491,8 +506,17 @@ window.PloinkSfx = (() => {
 
       // 3. Steel ring: detuned pairs spread left and right, bending down, with an echo
       const bus = ctx.createGain();
-      bus.gain.value = 1;
+      bus.gain.value = 0.75;
       bus.connect(master);
+      // A fast tremble makes the steel clang and rattle instead of ringing smoothly.
+      const tremble = ctx.createOscillator();
+      tremble.frequency.value = 23 * p;
+      const trembleDepth = ctx.createGain();
+      trembleDepth.gain.value = 0.3;
+      tremble.connect(trembleDepth);
+      trembleDepth.connect(bus.gain);
+      tremble.start(t);
+      tremble.stop(t + 2.2);
       const send = ctx.createGain();
       send.gain.value = 0.7;
       bus.connect(send);
@@ -533,6 +557,9 @@ window.PloinkSfx = (() => {
       });
       // Blades scraping apart
       hiss({ from: 5200 * p, to: 1400 * p, q: 8, at: hit + 0.01, attack: 0.005, decay: 0.3, peak: 0.28, wet: 0.4 });
+
+      // Clatter: the blades rattle against each other a few more times
+      [0.05, 0.11, 0.2, 0.32].forEach((d, i) => clank(hit + d + Math.random() * 0.02, 0.32 * (1 - i * 0.2)));
 
       // 4. Sparks crackling away
       for (let i = 0; i < 16; i++) {

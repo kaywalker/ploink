@@ -117,7 +117,9 @@
   let lastLava = null;              // latest lava phase from the hub (kept for the cool-down)
   let lavaPhaseSeen = 'none';
   let burnReadyAt = 0;
-  let lastSizzle = 0;                 // little coins flying from a cut fruit to the ninja
+  let lastSizzle = 0;
+  let spinTurn = 0;                 // how far the own katana turned since the last "wusch"
+  let lastRot = 0;                 // little coins flying from a cut fruit to the ninja
   const cutSpots = new Map();       // fruit id -> where the own blade cut it (until the hub confirms)
   const items = new Map();          // id -> power-up bubble (same path formula as fruit)
   const myEffects = {};             // item kind -> active until (performance.now)
@@ -764,6 +766,22 @@
       }
     }
     if (cutSpots.size > 50) cutSpots.clear(); // claims the hub turned down
+  }
+
+  /** Every full turn of the own spinning katana makes a "wusch". */
+  function updateSwish(now) {
+    const delta = Math.abs(ninja.rot - lastRot);
+    lastRot = ninja.rot;
+    if (!bladeActive(now)) {
+      spinTurn = Math.PI * 2 - 0.4; // the first "wusch" comes right after the spin starts
+      return;
+    }
+    if (delta > 1.5) return; // the roll was reset (landing), not a turn
+    spinTurn += delta;
+    if (spinTurn >= Math.PI * 2) {
+      spinTurn -= Math.PI * 2;
+      SFX.swish();
+    }
   }
 
   // --- Lava -----------------------------------------------------------------------
@@ -2053,6 +2071,7 @@
     updateEffects(dt);
     updateCoins(dt, list);
     updateLava(now, dt);
+    updateSwish(now);
     updateClocks();
     draw(now, list);
     if (window.__ninja && window.__ninja.onFrame) window.__ninja.onFrame(now);
