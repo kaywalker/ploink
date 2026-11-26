@@ -297,6 +297,17 @@ async function main() {
   assert.equal(b.take((m) => m.type === 'star'), null, 'no stars, no throw');
   console.log('✓ no throw without shuriken');
 
+  // Every power-up comes once per shuffled bag: ten bubbles hold each kind twice.
+  room.itemBag = [];
+  const kinds = {};
+  for (let i = 0; i < 10; i++) {
+    const it = room.spawnItem(Date.now());
+    kinds[it.kind] = (kinds[it.kind] || 0) + 1;
+  }
+  assert.deepEqual(Object.keys(kinds).sort(), Object.keys(hub.ITEMS).sort());
+  assert.ok(Object.values(kinds).every((n) => n === 2), JSON.stringify(kinds));
+  console.log('✓ every power-up kind comes regularly (shuffled bag)');
+
   const end = await a.next((m) => m.type === 'roundEnd', 11000);
   assert.equal(end.results.length, 2);
   assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');

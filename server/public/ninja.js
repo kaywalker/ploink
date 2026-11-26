@@ -858,7 +858,7 @@
     };
     if (keys[e.key]) jump(...keys[e.key]);
     else if (e.key === ' ') slash();
-    else if (e.key === 'f') throwStar(ninja.facing, 0.15);
+    else if (e.key === 'f' || e.key === 'F') throwStar(ninja.facing, 0.15);
     else return;
     e.preventDefault();
   });

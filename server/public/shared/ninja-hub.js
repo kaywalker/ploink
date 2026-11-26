@@ -50,7 +50,7 @@
     clashSpeed: 8,              // two spinning katanas bounce both ninjas apart
     spinFreshMs: 400,           // a reported spin counts for this long
 
-    itemEveryMs: 7_000,         // a power-up bubble floats down about this often
+    itemEveryMs: 6_000,         // a power-up bubble rises about this often
     itemRadius: 0.45,
     giantReach: 1.0,            // extra katana reach with the giant katana
     turboFactor: 1.35,          // jump speed with turbo (applied on the phone)
@@ -90,11 +90,11 @@
 
   // Power-ups in floating bubbles. `bit` marks an active effect in the ninja snapshots.
   const ITEMS = {
-    giant:  { ms: 8_000,  bit: 1, weight: 3 },  // 🗡️ longer katana
-    double: { ms: 10_000, bit: 2, weight: 3 },  // ✨ double points
-    shield: { ms: 12_000, bit: 4, weight: 2 },  // 🛡️ blocks one kick or wasp nest
-    turbo:  { ms: 8_000,  bit: 8, weight: 3 },  // ⚡ stronger jumps
-    shuriken: { ms: 0, bit: 16, weight: 3, stars: 3 }, // ✦ three throwing stars (a count, not a timer)
+    giant:  { ms: 8_000,  bit: 1 },  // 🗡️ longer katana
+    double: { ms: 10_000, bit: 2 },  // ✨ double points
+    shield: { ms: 12_000, bit: 4 },  // 🛡️ blocks one kick or wasp nest
+    turbo:  { ms: 8_000,  bit: 8 },  // ⚡ stronger jumps
+    shuriken: { ms: 0, bit: 16, stars: 3 }, // ✦ three throwing stars (a count, not a timer)
   };
 
   const COLORS = ['#ff5d73', '#4dd6ff', '#7ee081', '#ffb84d', '#c77dff', '#ffe156'];
@@ -121,14 +121,19 @@
     return 'apple';
   }
 
-  function pickItemKind() {
-    const total = Object.values(ITEMS).reduce((s, i) => s + i.weight, 0);
-    let r = Math.random() * total;
-    for (const [kind, def] of Object.entries(ITEMS)) {
-      r -= def.weight;
-      if (r <= 0) return kind;
+  /**
+   * Next power-up kind from a shuffled bag: every kind comes once per round of the bag,
+   * so none of them goes missing for a whole game (pure chance left long dry spells).
+   */
+  function pickItemKind(room) {
+    if (!room.itemBag.length) {
+      room.itemBag = Object.keys(ITEMS);
+      for (let i = room.itemBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [room.itemBag[i], room.itemBag[j]] = [room.itemBag[j], room.itemBag[i]];
+      }
     }
-    return 'giant';
+    return room.itemBag.pop();
   }
 
   const hasEffect = (p, kind, now) => (p.effects[kind] || 0) > now;
@@ -163,6 +168,7 @@
       this.fruits = new Map();
       this.items = new Map();   // power-up bubbles, same path formula as the fruit
       this.stars = new Map();   // shuriken in flight
+      this.itemBag = [];        // shuffled power-up kinds still to come
       this.nextItemAt = 0;
       this.phase = 'lobby';     // lobby | countdown | playing
       this.phaseEndsAt = 0;
@@ -324,7 +330,7 @@
       const r = CONFIG.itemRadius;
       const item = {
         id: nextFruitId++,
-        kind: pickItemKind(),
+        kind: overrides.kind || pickItemKind(this),
         t0: now,
         r,
         rise: true,
