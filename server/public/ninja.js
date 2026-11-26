@@ -464,7 +464,6 @@
     const now = performance.now();
     if (ninja.air || now < ninja.stunnedUntil || now < ninja.slashUntil) return;
     ninja.slashUntil = now + CFG.slashMs;
-    SFX.slash();
     ninja.spinDir = ninja.facing;
     vibrate(6);
   }

@@ -379,11 +379,6 @@ window.PloinkSfx = (() => {
       hiss({ from: 450 * p, to: 1900 * p, q: 1.4, attack: 0.07, decay: 0.13, peak: 0.24 * volume, wet: 0.1 });
       hiss({ from: 1500 * p, to: 3800 * p, q: 3, at: 0.04, attack: 0.04, decay: 0.08, peak: 0.08 * volume, wet: 0.05 });
     },
-    /** Katana spin on the ground. */
-    slash() {
-      if (!ready()) return;
-      shing({ peak: 0.3 });
-    },
     /**
      * Blade through fruit: "tschak!" and a wet smack. A short air swish, a crisp bright
      * transient where the blade bites, then the inside of the fruit: crunchy fibres
