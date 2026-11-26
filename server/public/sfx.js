@@ -25,7 +25,16 @@ window.PloinkSfx = (() => {
   let route = null; // while the music schedules notes, they go into the music bus
   const afterUnlock = [];
 
+  // iPhone: Safari treats web audio as "ambient" by default, which the ring/silent
+  // switch mutes. As a game we ask for "playback" (Audio Session API, Safari only).
+  function claimAudioSession() {
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback';
+    } catch { /* not supported */ }
+  }
+
   function unlock() {
+    claimAudioSession();
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
@@ -60,11 +69,24 @@ window.PloinkSfx = (() => {
       // Render the koto strings ahead, so the first pluck in a game does not stutter.
       setTimeout(() => SCALE.forEach(pluckBuffer), 50);
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    // Suspended at the start, "interrupted" after a phone call on iOS: resume on a gesture.
+    if (ctx.state !== 'running') {
+      const resumed = ctx.resume();
+      if (resumed && resumed.catch) resumed.catch(() => {});
+      // The classic iOS unlock: start a silent one-sample buffer inside the gesture.
+      const silent = ctx.createBufferSource();
+      silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      silent.connect(ctx.destination);
+      silent.start(0);
+    }
     afterUnlock.forEach((fn) => fn());
   }
-  window.addEventListener('pointerdown', unlock, { capture: true });
-  window.addEventListener('keydown', unlock, { capture: true });
+  // Only some events count as a user gesture for audio: on touch screens lifting the
+  // finger does (pointerup, touchend, click), putting it down does not. So listen to all
+  // of them; every later gesture also resumes audio that the system suspended.
+  for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+    window.addEventListener(type, unlock, { capture: true, passive: true });
+  }
 
   const ready = () => ctx && !muted && ctx.state === 'running';
   const vary = (amount = 0.08) => 1 + (Math.random() * 2 - 1) * amount; // no two hits alike
