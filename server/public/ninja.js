@@ -25,6 +25,7 @@
   const HIT_REACH = CFG.bladeReach * 0.95;
   const RECONNECT_DELAY_MS = 1200;
   const STEP = 1 / 120;
+  const TRAIL_MS = 550;             // how long a ninja's light trail lasts
   const TUMBLE_MS = 450;            // a kicked ninja cannot cut or kick back for this long
   const NINJA_SCALE = 1.2;         // drawn a bit larger than its hit box for small screens
 
@@ -87,6 +88,7 @@
   const particles = [];
   const splats = [];
   const popups = [];
+  const trails = new Map();         // id -> recent positions [{x, y, t}] for the light trail
   const bumpCooldown = new Map();   // id -> time when the own katana may knock them again
 
   const ninja = {
@@ -1168,6 +1170,52 @@
     ctx.shadowBlur = 0;
   }
 
+  /**
+   * Glowing trail in the player colour along the last few hundred milliseconds of
+   * movement: wide and bright at the ninja, thin and faded at the end.
+   */
+  function drawTrail(id, x, y, color, now) {
+    let pts = trails.get(id);
+    if (!pts) trails.set(id, (pts = []));
+    const last = pts[pts.length - 1];
+    if (last && Math.hypot(x - last.x, y - last.y) > 3) pts.length = 0; // respawn or a jump in the data
+    if (!last || Math.hypot(x - last.x, y - last.y) > 0.03) pts.push({ x, y, t: now });
+    while (pts.length && now - pts[0].t > TRAIL_MS) pts.shift();
+    if (pts.length < 2) return;
+
+    // A ribbon of quads that share their edges: no overlaps, so no bright beads at the
+    // joints. Each point's normal is averaged from its neighbours to keep it seamless.
+    const P = pts.map((p) => ({ x: sx(p.x), y: sy(p.y), k: 1 - (now - p.t) / TRAIL_MS }));
+    const N = P.map((p, i) => {
+      const a = P[Math.max(0, i - 1)];
+      const b = P[Math.min(P.length - 1, i + 1)];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    });
+    const ribbon = (fill, width, alpha) => {
+      ctx.fillStyle = fill;
+      for (let i = 1; i < P.length; i++) {
+        const k = P[i].k; // 1 at the ninja, 0 at the end
+        if (k <= 0) continue;
+        const w0 = (width * Math.max(0, P[i - 1].k)) / 2;
+        const w1 = (width * k) / 2;
+        ctx.globalAlpha = alpha * k;
+        ctx.beginPath();
+        ctx.moveTo(P[i - 1].x + N[i - 1].x * w0, P[i - 1].y + N[i - 1].y * w0);
+        ctx.lineTo(P[i].x + N[i].x * w1, P[i].y + N[i].y * w1);
+        ctx.lineTo(P[i].x - N[i].x * w1, P[i].y - N[i].y * w1);
+        ctx.lineTo(P[i - 1].x - N[i - 1].x * w0, P[i - 1].y - N[i - 1].y * w0);
+        ctx.closePath();
+        ctx.fill();
+      }
+    };
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ribbon(color, S * 0.66, 0.55);
+    ribbon('#ffffff', S * 0.16, 0.4); // a thin white core reads as a streak of light
+    ctx.restore();
+  }
+
   function drawEffects() {
     for (const p of particles) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
@@ -1226,6 +1274,17 @@
       drawFruit(f, pos, t);
     }
     for (const h of halves) drawHalf(h, t);
+    // Trails first, so every ninja is drawn on top of all of them.
+    const live = new Set();
+    for (const o of list) {
+      live.add(o.id);
+      drawTrail(o.id, o.x, o.y, (playerInfo.get(o.id) || {}).color || '#ccc', now);
+    }
+    if (me.id) {
+      live.add(me.id);
+      drawTrail(me.id, ninja.x, ninja.y, me.color, now);
+    }
+    for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
     for (const o of list) {
       const info = playerInfo.get(o.id) || { name: '?', color: '#ccc' };
       drawNinja(o, info.color, info.name, now, { spinning: !!o.air });
