@@ -192,12 +192,12 @@
         ninja.vy = msg.vy;
         ninja.spinDir = msg.vx >= 0 ? 1 : -1;
         sparks(ninja.x, ninja.y, '#ffffff', 10);
-        toast(`💨 ${msg.by.name} hat dich weggekickt!`, msg.by.color);
+        shout(`💨 ${msg.by.name}`, msg.by.color);
         vibrate([40, 30, 40]);
         break;
       case 'stunned':
         ninja.stunnedUntil = performance.now() + msg.ms;
-        toast('🐝 Autsch – Wespen!', '#ffb84d');
+        shout('🐝 Autsch!', '#ffb84d');
         vibrate([120, 60, 120]);
         break;
       case 'roundEnd':
@@ -208,7 +208,8 @@
         }
         break;
       case 'event':
-        if (msg.kind === 'join' && msg.id !== me.id) toast(`${msg.name} ist im Dojo`, msg.color);
+        // Mid-round the score chips show newcomers; a message would only get in the way.
+        if (msg.kind === 'join' && msg.id !== me.id && (!state || state.phase !== 'playing')) toast(`${msg.name} ist im Dojo`, msg.color);
         break;
       default:
         break;
@@ -409,6 +410,7 @@
       if (Math.hypot(o.x - ninja.x, o.y - ninja.y) > HIT_REACH + CFG.ninjaRadius) continue;
       bumpCooldown.set(o.id, now + CFG.bumpCooldownMs + 200);
       sparks((o.x + ninja.x) / 2, (o.y + ninja.y) / 2, '#ffffff', 8);
+      popups.push({ x: o.x, y: o.y + 0.9, life: 1, text: 'Kick!', color: me.color });
       send({ type: 'bump', id: o.id });
     }
   }
@@ -630,6 +632,11 @@
       const left = String(Math.max(1, Math.ceil((state.phaseEndsAt - now) / 1000)));
       if (countdownEl.textContent !== left) countdownEl.textContent = left;
     }
+  }
+
+  /** Short message right above the own ninja: where the player is looking anyway. */
+  function shout(text, color) {
+    popups.push({ x: ninja.x, y: ninja.y + 1.4, life: 1.3, text, color });
   }
 
   function toast(text, color) {

@@ -1073,6 +1073,10 @@ body.ninja { background: #1b1035; }
 
 .fruit-legend { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 
+/* Messages sit on the floor planks: the sky above is where the action is. */
+.ninja .toasts { top: auto; bottom: calc(var(--safe-bottom) + 3px); }
+.ninja .toast { padding: 3px 10px; font-size: 11px; background: rgba(20, 10, 30, 0.7); }
+
 @media (orientation: landscape) {
   .ninja .lobby { align-items: start; }
 }
