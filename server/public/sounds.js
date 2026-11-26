@@ -9,7 +9,8 @@
   const note = document.getElementById('muted-note');
 
   const sequences = {
-    'combo-run': () => [1, 2, 3, 4, 5, 6].forEach((chain, i) => setTimeout(() => SFX.combo(chain), i * 260)),
+    // A combo run as in the game: every hit 5 points more and one step higher.
+    'combo-run': () => [1, 2, 3, 4, 5, 6].forEach((chain, i) => setTimeout(() => SFX.combo(chain, 10 + (chain - 1) * 5), i * 700)),
     countdown: () => {
       [0, 1, 2].forEach((i) => setTimeout(() => SFX.beep(), i * 1000));
       setTimeout(() => SFX.go(), 3000);
@@ -37,6 +38,7 @@
         const raw = button.dataset.arg;
         const arg = raw === undefined ? undefined : raw === 'true' ? true : Number(raw);
         if (name === 'cut') SFX.cut(arg === undefined ? 1 : arg, button.dataset.fruit);
+        else if (name === 'points') SFX.combo(1, arg);
         else SFX[name](arg);
       }, 30);
     });

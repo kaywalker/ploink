@@ -198,8 +198,8 @@ window.PloinkSfx = (() => {
   };
 
   /** Struck glass bell: hard attack, bright inharmonic partials, a click, little room. */
-  function pling(freq, at = 0, level = 1) {
-    tone({ from: freq, at, attack: 0.001, decay: 0.28, peak: 0.24 * level, wet: 0.12 });
+  function pling(freq, at = 0, level = 1, decay = 0.28) {
+    tone({ from: freq, at, attack: 0.001, decay, peak: 0.24 * level, wet: 0.12 });
     tone({ from: freq * 2.756, at, attack: 0.001, decay: 0.12, peak: 0.1 * level, wet: 0.1 });
     tone({ from: freq * 5.404, at, attack: 0.001, decay: 0.05, peak: 0.05 * level, wet: 0 });
     hiss({ filter: 'highpass', from: 6500, at, attack: 0.001, decay: 0.01, peak: 0.18 * level, wet: 0 });
@@ -413,14 +413,21 @@ window.PloinkSfx = (() => {
       }
     },
     /**
-     * Points: a hard, bright "pling" like a struck glass bell, one scale step higher
-     * per combo hit; from a 3-combo on a second, higher pling follows.
+     * Points: a "brrring" like a coin rattle, a fast trill of hard, bright bell strikes.
+     * The more points, the longer it rings (10 points ≈ 0.2 s, 50 ≈ 0.8 s); the combo
+     * raises the pitch one scale step per hit.
      */
-    combo(chain) {
+    combo(chain = 1, points = 10) {
       if (!ready()) return;
-      const step = 8 + Math.min(chain - 1, 6);
-      pling(note(step) * 2);
-      if (chain > 2) pling(note(step + 2) * 2, 0.07, 0.7);
+      const base = note(8 + Math.min(chain - 1, 6)) * 2;
+      const strikes = Math.max(4, Math.min(28, Math.round(2 + points / 2.5)));
+      const gap = 0.034;
+      for (let i = 0; i < strikes; i++) {
+        const last = i === strikes - 1;
+        const rise = 1 + (i / strikes) * 0.06; // the rattle climbs a little
+        const f = base * rise * (i % 2 ? 1.335 : 1); // trill between two bell notes
+        pling(f, i * gap, last ? 1 : 0.75 - (i / strikes) * 0.2, last ? 0.45 : 0.07);
+      }
     },
     /** Uncut fruit lands on the floor. */
     splat() {

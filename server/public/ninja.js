@@ -726,7 +726,7 @@
     const label = msg.shielded ? '🛡️ geschützt'
       : `${msg.points > 0 ? '+' : '−'}${Math.abs(msg.points)}${msg.chain > 1 ? ` · ${msg.chain}er-Kombo` : ''}`;
     const mine = msg.by.id === me.id;
-    if (mine) SFX.combo(msg.chain);
+    if (mine && msg.points > 0) SFX.combo(msg.chain, msg.points);
     else if (f) SFX.cut(0.4, f.type);
     const at = pos || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
     if (at) {
