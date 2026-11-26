@@ -198,11 +198,10 @@ window.PloinkSfx = (() => {
   };
 
   /** Struck glass bell: hard attack, bright inharmonic partials, a click, little room. */
-  function pling(freq, at = 0, level = 1, decay = 0.28) {
+  function pling(freq, at = 0, level = 1, decay = 0.28, light = false) {
     tone({ from: freq, at, attack: 0.001, decay, peak: 0.24 * level, wet: 0.12 });
-    tone({ from: freq * 2.756, at, attack: 0.001, decay: 0.12, peak: 0.1 * level, wet: 0.1 });
-    tone({ from: freq * 5.404, at, attack: 0.001, decay: 0.05, peak: 0.05 * level, wet: 0 });
-    hiss({ filter: 'highpass', from: 6500, at, attack: 0.001, decay: 0.01, peak: 0.18 * level, wet: 0 });
+    tone({ from: freq * 2.756, at, attack: 0.001, decay: Math.min(0.1, decay), peak: 0.08 * level, wet: 0.1 });
+    if (!light) hiss({ filter: 'highpass', from: 6500, at, attack: 0.001, decay: 0.008, peak: 0.12 * level, wet: 0 });
   }
 
   /** Shakuhachi-like flute: a breathy sine with a slow vibrato that swells in. */
@@ -414,19 +413,19 @@ window.PloinkSfx = (() => {
     },
     /**
      * Points: a "brrring" like a coin rattle, a fast trill of hard, bright bell strikes.
-     * The more points, the longer it rings (10 points ≈ 0.2 s, 50 ≈ 0.8 s); the combo
-     * raises the pitch one scale step per hit.
+     * The more points, the longer it rings, but kept short (10 points ≈ 0.1 s, 50 ≈ 0.3 s,
+     * at most ≈ 0.35 s); the combo raises the pitch one scale step per hit.
      */
     combo(chain = 1, points = 10) {
       if (!ready()) return;
       const base = note(8 + Math.min(chain - 1, 6)) * 2;
-      const strikes = Math.max(4, Math.min(28, Math.round(2 + points / 2.5)));
-      const gap = 0.034;
+      const strikes = Math.max(4, Math.min(12, Math.round(2 + points / 5.5)));
+      const gap = 0.03;
       for (let i = 0; i < strikes; i++) {
         const last = i === strikes - 1;
-        const rise = 1 + (i / strikes) * 0.06; // the rattle climbs a little
+        const rise = 1 + (i / strikes) * 0.05; // the rattle climbs a little
         const f = base * rise * (i % 2 ? 1.335 : 1); // trill between two bell notes
-        pling(f, i * gap, last ? 1 : 0.75 - (i / strikes) * 0.2, last ? 0.45 : 0.07);
+        pling(f, i * gap, last ? 0.8 : 0.4, last ? 0.3 : 0.05, !last);
       }
     },
     /** Uncut fruit lands on the floor. */
