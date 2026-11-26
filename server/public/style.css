@@ -1167,6 +1167,12 @@ body.ninja { background: #1b1035; }
 .ninja .toasts { top: auto; bottom: calc(var(--safe-bottom) + 3px); }
 .ninja .toast { padding: 3px 10px; font-size: 11px; background: rgba(20, 10, 30, 0.7); }
 
+/* Without results or bests yet, the lobby is just one column (rules have their own sheet). */
+.ninja .lobby-info:not(:has(> :not([hidden]))) { display: none; }
+@media (orientation: landscape) {
+  .ninja .brawl-lobby:not(:has(.lobby-info > :not([hidden]))) { max-width: 420px; grid-template-columns: 1fr; }
+}
+
 /* Room for the menu button above the lobby card. */
 .ninja .lobby { padding-top: calc(var(--safe-top) + 52px); }
 
@@ -1185,6 +1191,10 @@ body.ninja { background: #1b1035; }
   background: rgba(10, 6, 20, 0.6);
 }
 .leave-card { max-width: 320px; }
+/* Rules: their own sheet over the lobby, scrolls on short screens. */
+.rules-sheet { overflow-y: auto; place-items: start center; padding-top: calc(var(--safe-top) + 16px); padding-bottom: calc(var(--safe-bottom) + 16px); }
+.rules-card { max-width: 440px; text-align: left; }
+.rules-card .lobby-title { text-align: center; }
 .ninja-top .badge.bump { animation: score-bump .3s ease; }
 @keyframes score-bump { 40% { transform: scale(1.18); border-color: #ffd23f; } }
 .leaderboard-list li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

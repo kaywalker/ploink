@@ -346,6 +346,7 @@
     $('hud-score').textContent = self ? self.score : 0;
     $('hud-timer').hidden = msg.phase !== 'playing';
     lobby.hidden = msg.phase !== 'lobby';
+    if (msg.phase !== 'lobby') $('rules').hidden = true; // the round starts: back to the dojo
     countdownEl.hidden = msg.phase !== 'countdown';
     if (msg.phase !== 'playing') {
       fruits.clear();
@@ -2216,6 +2217,12 @@
     leaveConfirm.hidden = true;
     setMenu(false); // "Weiterspielen" means back into the game
   });
+  // Rules: a menu item of the lobby, opened as their own sheet.
+  const rulesEl = $('rules');
+  $('rules-btn').addEventListener('click', () => { rulesEl.hidden = false; });
+  $('rules-close').addEventListener('click', () => { rulesEl.hidden = true; });
+  rulesEl.addEventListener('click', (e) => { if (e.target === rulesEl) rulesEl.hidden = true; });
+
   $('lobby-leave').addEventListener('click', (e) => {
     e.preventDefault();
     leaveGame();
