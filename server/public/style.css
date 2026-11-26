@@ -1067,11 +1067,97 @@ body.brawl { background: #14162b; }
 body.ninja { background: #1b1035; }
 
 .ninja-top .badge { cursor: default; }
-.ninja-top .sound-toggle { pointer-events: auto; cursor: pointer; padding: 6px 9px; }
-.ninja-top .sound-toggle.off { opacity: 0.4; text-decoration: line-through; }
+
+/* Top bar: points left, time in the middle, menu right. */
+.ninja-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+.ninja-bar .badge { padding: 6px 10px; font-size: 13px; background: rgba(10, 12, 28, 0.6); }
+.ninja-score { justify-self: start; }
+.ninja-timer { justify-self: center; grid-column: 2; }
+.ninja-timer strong { font-size: 18px; }
+.ninja-top .ninja-menu-btn {
+  grid-column: 3;
+  justify-self: end;
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Fold-out menu: a dim backdrop (tap = close) and the panel under the menu button. */
+.ninja-menu {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  background: rgba(10, 6, 20, 0.5);
+}
+.ninja-menu-panel {
+  position: absolute;
+  top: calc(var(--safe-top) + 50px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  width: min(260px, calc(100% - 20px));
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  transform-origin: top right;
+  animation: menu-open .16s ease-out;
+}
+@keyframes menu-open { from { opacity: 0; transform: scale(0.92) translateY(-6px); } }
+.ninja-menu-room { margin: 0 0 4px; font-size: 14px; color: var(--muted); }
+.ninja-menu-room strong { color: var(--text); letter-spacing: 0.08em; }
+.ninja-menu-note { margin: 0 0 4px; padding: 6px 8px; font-size: 12px; border-radius: 8px; background: rgba(255, 210, 63, 0.14); color: #ffd23f; }
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.menu-item em { font-style: normal; font-size: 12px; font-weight: 700; color: #7ee081; }
+.menu-item.off em { color: var(--muted); }
+.menu-danger { color: #ff8a8a; }
+.ninja-menu-panel .btn { margin-top: 4px; }
+
+/* Someone else has the menu open: the whole dojo waits. */
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 6, 20, 0.45);
+}
+.pause-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 22px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.pause-card strong { font-size: 22px; }
+.pause-card span { font-size: 14px; color: var(--muted); }
 .score-chip { min-width: 56px; }
 .score-chip small { font-weight: 700; color: var(--text); }
-.score-chip.me { background: rgba(255, 255, 255, 0.16); }
 
 .fruit-legend { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
 
@@ -1081,9 +1167,9 @@ body.ninja { background: #1b1035; }
 
 @media (orientation: landscape) {
   .ninja .lobby { align-items: start; }
+  .ninja-top { grid-template-columns: 1fr; }
 }
 
-.hud-best { font-size: 11px; font-weight: 700; color: var(--muted); }
 .leave-confirm {
   position: absolute;
   inset: 0;

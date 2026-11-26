@@ -60,6 +60,7 @@
     lavaMs: 8_000,
     lavaPenalty: 20,            // points lost when landing in the lava
     lavaCooldownMs: 1_000,
+    maxPauseMs: 30_000,         // an open menu pauses the round for everybody, at most this long
     starSpeed: 16,              // shuriken flight speed (units/s), straight line, no gravity
     starRange: 10,              // a shuriken vanishes after this distance
     starRadius: 0.3,
@@ -186,6 +187,57 @@
       this.phaseTimer = null;
       this.spawnBudget = 0;
       this.nextSalvoAt = 0;
+      // Pause: the room has its own clock that stands still while a player has the menu
+      // open. Every time on the hub (fruit paths, lava, effects, round end) uses it, so a
+      // pause shifts nothing; the phones freeze their copy of the clock the same way.
+      this.pausers = new Set(); // ids of players with the menu open
+      this.pausedSince = 0;     // Date.now() when the current pause began (0 = running)
+      this.pausedTotal = 0;     // ms the clock was stopped so far
+      this.pauseTimer = null;
+    }
+
+    /** Hub clock in ms: Date.now() minus all pauses, frozen during a pause. */
+    now() {
+      return (this.pausedSince || Date.now()) - this.pausedTotal;
+    }
+
+    get paused() {
+      return this.pausedSince > 0;
+    }
+
+    /** Ends the countdown or the round when its time is up on the hub clock. */
+    schedulePhaseEnd() {
+      clearTimeout(this.phaseTimer);
+      if (this.phase === 'lobby' || this.paused) return;
+      const next = this.phase === 'countdown' ? () => this.startRound() : () => this.endRound();
+      this.phaseTimer = setTimeout(next, Math.max(0, this.phaseEndsAt - this.now()));
+    }
+
+    /** A player opened (on) or closed (off) the menu. */
+    setPause(player, on) {
+      if (on && this.phase !== 'lobby') this.pausers.add(player.id);
+      else this.pausers.delete(player.id);
+      this.updatePause();
+    }
+
+    updatePause() {
+      const want = this.pausers.size > 0 && this.phase !== 'lobby';
+      if (want === this.paused) return;
+      if (want) {
+        this.pausedSince = Date.now();
+        clearTimeout(this.phaseTimer);
+        // Nobody can hold the whole dojo forever: the round goes on after a while.
+        this.pauseTimer = setTimeout(() => {
+          this.pausers.clear();
+          this.updatePause();
+        }, CONFIG.maxPauseMs);
+      } else {
+        this.pausedTotal += Date.now() - this.pausedSince;
+        this.pausedSince = 0;
+        clearTimeout(this.pauseTimer);
+        this.schedulePhaseEnd();
+      }
+      this.broadcastState();
     }
 
     connected() {
@@ -204,7 +256,8 @@
         type: 'state',
         phase: this.phase,
         phaseEndsAt: this.phaseEndsAt,
-        serverNow: Date.now(),
+        serverNow: this.now(),
+        paused: this.paused ? [...this.pausers] : null,
         players: [...this.players.values()].map((p) => ({
           id: p.id, name: p.name, color: p.color, score: p.score, best: p.best, connected: !!p.socket,
         })),
@@ -225,14 +278,13 @@
     startCountdown() {
       if (this.phase !== 'lobby' || this.connected().length === 0) return;
       this.phase = 'countdown';
-      this.phaseEndsAt = Date.now() + CONFIG.countdownMs;
+      this.phaseEndsAt = this.now() + CONFIG.countdownMs;
       this.broadcastState();
-      clearTimeout(this.phaseTimer);
-      this.phaseTimer = setTimeout(() => this.startRound(), CONFIG.countdownMs);
+      this.schedulePhaseEnd();
     }
 
     startRound() {
-      const now = Date.now();
+      const now = this.now();
       this.phase = 'playing';
       this.phaseEndsAt = now + CONFIG.roundMs;
       this.fruits.clear();
@@ -252,13 +304,14 @@
         p.prevBest = p.best;
       }
       this.broadcastState();
-      clearTimeout(this.phaseTimer);
-      this.phaseTimer = setTimeout(() => this.endRound(), CONFIG.roundMs);
+      this.schedulePhaseEnd();
     }
 
     endRound() {
       clearTimeout(this.phaseTimer);
+      this.pausers.clear();
       this.phase = 'lobby';
+      this.updatePause(); // a pause ends with the round
       this.phaseEndsAt = 0;
       this.fruits.clear();
       this.items.clear();
@@ -278,7 +331,9 @@
     }
 
     tick() {
-      const now = Date.now();
+      const now = this.now();
+      if (this.connected().length === 0) this.stopLoop();
+      if (this.paused) return; // everything stands still, the phones already froze
       if (this.phase === 'playing') {
         for (const [id, f] of this.fruits) {
           if (f.t0 + fruitLifetime(f) + 500 < now) this.fruits.delete(id);
@@ -320,7 +375,6 @@
           ]),
         });
       }
-      if (this.connected().length === 0) this.stopLoop();
     }
 
     spawnFruit(now, overrides = {}) {
@@ -386,7 +440,7 @@
       if (this.phase !== 'playing') return;
       const item = this.items.get(Number(msg.id));
       if (!item) return;
-      const now = Date.now();
+      const now = this.now();
       const x = Number(msg.x);
       const y = Number(msg.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -415,7 +469,7 @@
     /** The phone says its ninja touched the lava floor: lose points (not below zero). */
     burn(player) {
       if (this.phase !== 'playing' || !this.lava || !player.pos) return;
-      const now = Date.now();
+      const now = this.now();
       if (now < this.lava.startAt - 300 || now > this.lava.endAt + 300) return;
       if (now < player.lavaReadyAt || player.pos.y > 1.5) return;
       player.lavaReadyAt = now + CONFIG.lavaCooldownMs;
@@ -439,7 +493,7 @@
       player.stars--;
       const star = {
         id: nextFruitId++, by: player.id, x0: player.pos.x, y0: player.pos.y,
-        dx: round2(dx / len), dy: round2(dy / len), t0: Date.now(), hitNinja: false,
+        dx: round2(dx / len), dy: round2(dy / len), t0: this.now(), hitNinja: false,
       };
       this.stars.set(star.id, star);
       this.broadcast({
@@ -469,7 +523,7 @@
       const target = this.connected().find((p) => p.id === msg.target && p !== player);
       if (!target || !target.pos) return;
       if (Math.hypot(target.pos.x - x, target.pos.y - y) > CONFIG.ninjaRadius + CONFIG.starRadius + CONFIG.positionTolerance) return;
-      const now = Date.now();
+      const now = this.now();
       star.hitNinja = true;
       const who = (p) => ({ id: p.id, name: p.name, color: p.color });
       const at = { x: round2(x), y: round2(y) };
@@ -514,7 +568,7 @@
         rot: round2(Number(msg.rot) || 0),
         air: msg.air ? 1 : 0,
         facing: Number(msg.facing) < 0 ? -1 : 1,
-        at: Date.now(),
+        at: this.now(),
       };
     }
 
@@ -522,7 +576,7 @@
       if (this.phase !== 'playing') return;
       const fruit = this.fruits.get(Number(msg.id));
       if (!fruit) return;
-      const now = Date.now();
+      const now = this.now();
       const x = Number(msg.x);
       const y = Number(msg.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -582,7 +636,7 @@
      */
     bump(player, msg) {
       if (this.phase === 'lobby') return;
-      const now = Date.now();
+      const now = this.now();
       if (now < player.bumpReadyAt || now < player.stunnedUntil || !player.pos) return;
       const target = this.connected().find((p) => p.id === msg.id && p !== player);
       if (!target || !target.pos) return;
@@ -634,6 +688,7 @@
       if (this.players.size === 0) {
         this.stopLoop();
         clearTimeout(this.phaseTimer);
+        clearTimeout(this.pauseTimer);
         rooms.delete(this.code);
       }
     }
@@ -705,7 +760,7 @@
     const startX = round2(1 + ((player.slot * 3.1) % (CONFIG.width - 2)));
     player.send({
       type: 'joined', code, you: player.id, token, color: player.color, name: player.name,
-      serverNow: Date.now(), startX,
+      serverNow: room.now(), startX,
     });
     if (room.phase === 'playing') {
       player.send({ type: 'fruits', list: [...room.fruits.values()] });
@@ -716,6 +771,8 @@
     room.startLoop();
     return { room, player };
   }
+
+  const FROZEN_MESSAGES = new Set(['pos', 'cut', 'collect', 'throw', 'lava', 'starHit', 'bump']);
 
   /** Attach one client connection (WebSocket or peer-to-peer adapter). */
   function handleConnection(socket) {
@@ -731,7 +788,7 @@
       if (!msg || typeof msg.type !== 'string') return;
 
       if (msg.type === 'ping') {
-        socket.send(JSON.stringify({ type: 'pong', t: Number(msg.t) || 0, server: Date.now() }));
+        socket.send(JSON.stringify({ type: 'pong', t: Number(msg.t) || 0, server: session ? session.room.now() : Date.now() }));
         return;
       }
       if (msg.type === 'join') {
@@ -740,6 +797,8 @@
       }
       if (!session) return;
       const { room, player } = session;
+      // During a pause nothing moves: late claims and positions from before it are dropped.
+      if (room.paused && FROZEN_MESSAGES.has(msg.type)) return;
 
       switch (msg.type) {
         case 'pos':
@@ -762,6 +821,8 @@
           clearTimeout(player.removeTimer);
           room.players.delete(player.token);
           session = null;
+          room.pausers.delete(player.id);
+          room.updatePause();
           room.broadcastState();
           room.removeIfEmpty();
           break;
@@ -780,6 +841,9 @@
         case 'start':
           room.startCountdown();
           break;
+        case 'pause':
+          room.setPause(player, !!msg.on);
+          break;
         case 'stop':
           if (room.phase !== 'lobby') room.endRound();
           break;
@@ -793,6 +857,8 @@
       const { room, player } = session;
       if (player.socket !== socket) return; // replaced by a newer connection
       player.socket = null;
+      room.pausers.delete(player.id); // a lost connection must not keep the dojo frozen
+      room.updatePause();
       player.removeTimer = setTimeout(() => {
         room.players.delete(player.token);
         room.broadcastState();

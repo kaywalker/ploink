@@ -367,6 +367,47 @@ async function main() {
   assert.equal(room.players.size, 2);
   console.log('✓ leaving removes the ninja at once');
 
+  // An open menu pauses the round for everybody: the hub clock stands still.
+  a.drain();
+  b.drain();
+  a.send({ type: 'pause', on: true });
+  const paused = await b.next((m) => m.type === 'state' && m.paused);
+  assert.deepEqual(paused.paused, [anna.id]);
+  const frozenAt = room.now();
+  const leftBefore = room.phaseEndsAt - frozenAt;
+  b.send({ type: 'pause', on: true });   // a second menu keeps it paused
+  await sleep(250);
+  assert.equal(room.now(), frozenAt, 'the hub clock stands still');
+  const posBefore = ben.pos.x;
+  b.send({ type: 'pos', x: 1, y: 0.5, rot: 0, air: false, facing: 1 });
+  assert.equal(ben.pos.x, posBefore, 'positions are ignored during the pause');
+  a.send({ type: 'pause', on: false });
+  await sleep(20);
+  assert.ok(room.paused, 'still paused while Ben has the menu open');
+  b.send({ type: 'pause', on: false });
+  const resumed = await a.next((m) => m.type === 'state' && !m.paused && m.phase === 'playing');
+  assert.ok(Math.abs(resumed.phaseEndsAt - resumed.serverNow - leftBefore) < 60, 'no round time was lost');
+  assert.ok(Date.now() - room.now() >= 250, 'the clock lags the wall clock by the pause');
+  console.log('✓ the menu pauses the round for everybody and resumes without losing time');
+
+  // Nobody can freeze the dojo forever, and a lost connection lets go of the pause.
+  const maxPause = hub.CONFIG.maxPauseMs;
+  hub.CONFIG.maxPauseMs = 120;
+  a.send({ type: 'pause', on: true });
+  await a.next((m) => m.type === 'state' && m.paused);
+  await a.next((m) => m.type === 'state' && !m.paused, 1000);
+  hub.CONFIG.maxPauseMs = maxPause;
+  const d = fakeClient('Dana');
+  d.send({ type: 'join', code: '44', name: 'Dana', token: 'dana-token-1' });
+  await d.next((m) => m.type === 'joined');
+  d.send({ type: 'pause', on: true });
+  await a.next((m) => m.type === 'state' && m.paused);
+  d.socket.close();
+  await a.next((m) => m.type === 'state' && !m.paused);
+  d.send({ type: 'leave' });
+  room.players.delete('dana-token-1');
+  console.log('✓ a pause ends after a while or when the pausing phone goes away');
+
   const end = await a.next((m) => m.type === 'roundEnd', 11000);
   assert.equal(end.results.length, 2);
   assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');

@@ -136,10 +136,17 @@
     onPlatform: null, slashUntil: 0, stunnedUntil: 0, tumbleUntil: 0,
   };
 
-  // Shared clock: serverNow() ≈ Date.now() on the hub.
+  // Game clock: performance.now() minus all pauses, standing still while the dojo is
+  // paused (an open menu pauses the round for everybody). Everything in the game runs on
+  // it, so a pause freezes the picture and shifts no timer. The hub clock pauses the
+  // same way, which keeps serverNow() ≈ the hub clock across pauses.
+  let pausedSince = 0;              // performance.now() when the current pause began
+  let pausedTotal = 0;
+  let pauseChangedAt = 0;           // pongs sent before this are skewed by the pause
+  const gameNow = () => (pausedSince || performance.now()) - pausedTotal;
   let clockOffset = 0;
   let bestRtt = Infinity;
-  const serverNow = () => performance.now() + clockOffset;
+  const serverNow = () => gameNow() + clockOffset;
 
   let cssW = 1;
   let cssH = 1;
@@ -189,11 +196,11 @@
   function handleMessage(msg) {
     switch (msg.type) {
       case 'pong': {
-        const now = performance.now();
-        const rtt = now - msg.t;
+        const rtt = performance.now() - msg.t;
+        if (pausedSince || msg.t < pauseChangedAt) break; // the hub clock stood still meanwhile
         if (rtt < bestRtt * 1.2) {
           bestRtt = Math.min(bestRtt, rtt);
-          clockOffset = msg.server + rtt / 2 - now;
+          clockOffset = msg.server + rtt / 2 - gameNow();
         }
         break;
       }
@@ -202,7 +209,7 @@
         me = { id: msg.you, name: msg.name, color: msg.color };
         startX = msg.startX;
         send({ type: 'best', score: localBest(me.name) });
-        if (bestRtt === Infinity) clockOffset = msg.serverNow - performance.now();
+        if (bestRtt === Infinity) clockOffset = msg.serverNow - gameNow();
         if (msg.token) {
           token = msg.token;
           storage.set(sessionStorage, 'ploink-ninja-token', token);
@@ -303,7 +310,7 @@
         break;
       case 'stunned':
         SFX.buzz();
-        ninja.stunnedUntil = performance.now() + msg.ms;
+        ninja.stunnedUntil = gameNow() + msg.ms;
         shout('🐝 Autsch!', '#ffb84d');
         vibrate([120, 60, 120]);
         break;
@@ -337,9 +344,6 @@
     if (self) me.color = self.color;
     $('hud-count').textContent = msg.players.filter((p) => p.connected).length;
     $('hud-score').textContent = self ? self.score : 0;
-    const myBest = Math.max(self ? self.best || 0 : 0, localBest(me.name));
-    $('hud-best').hidden = myBest <= 0;
-    $('hud-best').textContent = ` · 🏆 ${myBest}`;
     $('hud-timer').hidden = msg.phase !== 'playing';
     lobby.hidden = msg.phase !== 'lobby';
     countdownEl.hidden = msg.phase !== 'countdown';
@@ -367,12 +371,40 @@
       hintTimer = setTimeout(() => hint.classList.add('faded'), 8000);
     }
 
+    applyPause(msg);
     renderTeam(msg.players);
     renderCrew(msg.players);
     renderResults(msg.lastResults);
     renderLeaderboard(msg.players, msg.lastResults);
     $('start').textContent = msg.lastResults ? 'Nochmal!' : 'Runde starten';
     $('lobby-title').textContent = msg.lastResults ? '🍉 Runde vorbei!' : 'Schneidet, was vom Himmel fällt!';
+  }
+
+  /** Freeze or resume the game clock together with the hub (see gameNow). */
+  function applyPause(msg) {
+    const pausers = msg.paused || [];
+    if (pausers.length && !pausedSince) {
+      pausedSince = performance.now();
+      pauseChangedAt = pausedSince;
+      clockOffset = msg.serverNow - gameNow(); // exactly the hub's frozen time
+      fingers.clear();
+      SFX.music.stop();
+    } else if (!pausers.length && pausedSince) {
+      pausedTotal += performance.now() - pausedSince;
+      pausedSince = 0;
+      pauseChangedAt = performance.now();
+      // The hub went on when it sent this, half a round trip ago.
+      clockOffset = msg.serverNow + (bestRtt === Infinity ? 0 : bestRtt / 2) - gameNow();
+      last = gameNow();
+      if (msg.phase === 'playing') SFX.music.start();
+      for (let i = 0; i < 3; i++) setTimeout(ping, i * 200);
+    }
+    const others = pausers.filter((id) => id !== me.id).map((id) => (playerInfo.get(id) || {}).name || 'Jemand');
+    const mine = pausers.includes(me.id);
+    pauseOverlay.hidden = !pausers.length || menuOpen;
+    $('pause-who').textContent = mine && !others.length ? 'Du hast pausiert'
+      : `${others.join(' & ')} ${others.length > 1 ? 'haben' : 'hat'} pausiert`;
+    renderMenuNote();
   }
 
   function placeAtStart(x) {
@@ -383,7 +415,7 @@
   }
 
   function receiveNinjas(list) {
-    const t = performance.now();
+    const t = gameNow();
     const seen = new Set();
     for (const [id, x, y, rot, air, stun, facing, eff] of list) {
       if (id === me.id) continue;
@@ -423,7 +455,7 @@
   // Own ninja
   // ---------------------------------------------------------------------------
   function jump(dx, dy) {
-    const now = performance.now();
+    const now = gameNow();
     if (now < ninja.stunnedUntil) return;
     let len = Math.hypot(dx, dy) || 1;
     dx /= len;
@@ -457,11 +489,11 @@
     ninja.vx = vx;
     ninja.vy = vy;
     ninja.spinDir = vx >= 0 ? 1 : -1;
-    if (tumble) ninja.tumbleUntil = performance.now() + TUMBLE_MS;
+    if (tumble) ninja.tumbleUntil = gameNow() + TUMBLE_MS;
   }
 
   function slash() {
-    const now = performance.now();
+    const now = gameNow();
     if (ninja.air || now < ninja.stunnedUntil || now < ninja.slashUntil) return;
     ninja.slashUntil = now + CFG.slashMs;
     ninja.spinDir = ninja.facing;
@@ -558,7 +590,7 @@
     }
   }
 
-  const effectOn = (kind, now = performance.now()) => (myEffects[kind] || 0) > now;
+  const effectOn = (kind, now = gameNow()) => (myEffects[kind] || 0) > now;
   const myReach = () => HIT_REACH + (effectOn('giant') ? CFG.giantReach * 0.95 : 0);
   const myBits = (now) => Object.keys(BIT).reduce((bits, kind) => bits | (effectOn(kind, now) ? BIT[kind] : 0), 0);
 
@@ -592,7 +624,7 @@
         myStars = msg.stars;
         shout(`${look.icon} ${myStars} Shuriken – doppelt tippen!`, look.rim);
       } else {
-        myEffects[msg.kind] = performance.now() + msg.ms;
+        myEffects[msg.kind] = gameNow() + msg.ms;
         shout(`${look.icon} ${look.label}!`, look.rim);
       }
       SFX.collect();
@@ -610,7 +642,7 @@
   // --- Shuriken ---------------------------------------------------------------
   /** Throw a shuriken towards world direction (dx, dy). */
   function throwStar(dx, dy) {
-    const now = performance.now();
+    const now = gameNow();
     if (!state || state.phase !== 'playing' || myStars <= 0 || now < ninja.stunnedUntil) return;
     const len = Math.hypot(dx, dy) || 1;
     dx /= len;
@@ -1036,8 +1068,8 @@
         if (lavaPhase(t) === 'hot') {
           // Burned in the lava: a puff of smoke and a hiss (not too many hisses at once).
           smoke(pos.x, 0.2, 8);
-          if (performance.now() - lastSizzle > 180) {
-            lastSizzle = performance.now();
+          if (gameNow() - lastSizzle > 180) {
+            lastSizzle = gameNow();
             SFX.sizzle(0.25);
           }
           continue;
@@ -1083,13 +1115,13 @@
   area.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     area.setPointerCapture?.(e.pointerId);
-    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), sx: e.clientX, sy: e.clientY, fired: false, lastFire: 0 });
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: gameNow(), sx: e.clientX, sy: e.clientY, fired: false, lastFire: 0 });
   });
 
   area.addEventListener('pointermove', (e) => {
     const f = fingers.get(e.pointerId);
     if (!f) return;
-    const now = performance.now();
+    const now = gameNow();
     const dx = e.clientX - f.x;
     const dy = e.clientY - f.y;
     if (Math.hypot(dx, dy) < SWIPE_PX || now - f.lastFire < REARM_MS) return;
@@ -1106,7 +1138,7 @@
     if (!f) return;
     fingers.delete(e.pointerId);
     const moved = Math.hypot(e.clientX - f.sx, e.clientY - f.sy);
-    const now = performance.now();
+    const now = gameNow();
     if (!f.fired && moved < TAP_PX && now - f.t < TAP_MAX_MS) {
       // Double tap with shuriken in the pocket: throw one towards the second tap.
       if (myStars > 0 && now - lastTap.t < DOUBLE_TAP_MS) {
@@ -1141,11 +1173,11 @@
   // UI
   // ---------------------------------------------------------------------------
   function renderTeam(players) {
-    const sorted = [...players].filter((p) => p.connected).sort((a, b) => b.score - a.score);
+    // The own score stands top left; the chips only show the others.
+    const sorted = [...players].filter((p) => p.connected && p.id !== me.id).sort((a, b) => b.score - a.score);
     $('team').replaceChildren(...sorted.map((p) => {
       const chip = document.createElement('span');
       chip.className = 'team-chip score-chip';
-      if (p.id === me.id) chip.classList.add('me');
       chip.style.setProperty('--chip-color', p.color);
       const name = document.createElement('b');
       name.textContent = p.id === me.id ? 'du' : p.name;
@@ -2032,7 +2064,7 @@
   // ---------------------------------------------------------------------------
   // Main loop
   // ---------------------------------------------------------------------------
-  let last = performance.now();
+  let last = gameNow();
   let acc = 0;
   let lastPosSent = 0;
   let lastPosKey = '';
@@ -2051,27 +2083,31 @@
     lastPosSent = now;
   }
 
-  function frame(now) {
+  function frame() {
+    // During a pause the game clock stands still: dt is 0 and the picture freezes.
+    const now = gameNow();
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    acc += dt;
-    while (acc >= STEP) {
-      step(STEP, now);
-      acc -= STEP;
-    }
-    checkCuts(now);
-    checkCollect(now);
     const list = otherNinjas(now);
-    checkBumps(now, list);
-    updateOwnStars(now, list);
+    if (!pausedSince) {
+      acc += dt;
+      while (acc >= STEP) {
+        step(STEP, now);
+        acc -= STEP;
+      }
+      checkCuts(now);
+      checkCollect(now);
+      checkBumps(now, list);
+      updateOwnStars(now, list);
 
-    if (now - lastPosSent >= POS_INTERVAL_MS) sendPos(now, false);
+      if (now - lastPosSent >= POS_INTERVAL_MS) sendPos(now, false);
 
-    updateEffects(dt);
-    updateCoins(dt, list);
-    updateLava(now, dt);
-    updateSwish(now);
-    updateClocks();
+      updateEffects(dt);
+      updateCoins(dt, list);
+      updateLava(now, dt);
+      updateSwish(now);
+      updateClocks();
+    }
     draw(now, list);
     if (window.__ninja && window.__ninja.onFrame) window.__ninja.onFrame(now);
     requestAnimationFrame(frame);
@@ -2081,17 +2117,85 @@
   $('lobby-code').textContent = roomCode;
   $('start').addEventListener('click', () => send({ type: 'start' }));
 
+  // ---------------------------------------------------------------------------
+  // Menu (top right): room, sound, music, full screen, leave. Open = paused for all.
+  // ---------------------------------------------------------------------------
+  const menuEl = $('menu');
+  const menuBtn = $('menu-btn');
+  const pauseOverlay = $('pause-overlay');
+  let menuOpen = false;
+
+  function setMenu(open) {
+    if (menuOpen === open) return;
+    menuOpen = open;
+    menuEl.hidden = !open;
+    menuBtn.textContent = open ? '✕' : '☰';
+    menuBtn.setAttribute('aria-expanded', String(open));
+    menuBtn.setAttribute('aria-label', open ? 'Menü schließen' : 'Menü öffnen');
+    // In the lobby nothing runs, so there is nothing to pause.
+    if (state && state.phase !== 'lobby') send({ type: 'pause', on: open });
+    else if (!open) send({ type: 'pause', on: false });
+    if (state) applyPause(state);
+  }
+
+  /** What the open menu says about the pause. */
+  function renderMenuNote() {
+    const note = $('menu-note');
+    const running = state && state.phase !== 'lobby';
+    note.hidden = !menuOpen || !running;
+    if (note.hidden) return;
+    note.textContent = state.paused && state.paused.length
+      ? '⏸ Das Spiel ist für alle pausiert'
+      : '▶ Die Pause ist vorbei, das Spiel läuft weiter';
+  }
+
+  menuBtn.addEventListener('click', () => setMenu(!menuOpen));
+  $('menu-close').addEventListener('click', () => setMenu(false));
+  menuEl.addEventListener('click', (e) => { if (e.target === menuEl) setMenu(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menuOpen) setMenu(false); });
+
+  /** One menu row with an on/off state on the right. */
+  function renderToggle(btn, on, onText = 'an', offText = 'aus') {
+    btn.classList.toggle('off', !on);
+    btn.querySelector('em').textContent = on ? onText : offText;
+  }
+
   // Sound on/off, remembered per device.
   const soundBtn = $('sound');
   const renderSound = () => {
-    soundBtn.textContent = SFX.muted ? '🔇' : '🔊';
-    soundBtn.setAttribute('aria-label', SFX.muted ? 'Ton einschalten' : 'Ton ausschalten');
+    soundBtn.firstChild.textContent = SFX.muted ? '🔇 Ton ' : '🔊 Ton ';
+    renderToggle(soundBtn, !SFX.muted);
   };
   soundBtn.addEventListener('click', () => {
     SFX.setMuted(!SFX.muted);
     renderSound();
   });
   renderSound();
+
+  // Background music on/off, separate from the sound effects.
+  const musicBtn = $('music');
+  const renderMusic = () => renderToggle(musicBtn, !SFX.music.off);
+  musicBtn.addEventListener('click', () => {
+    SFX.music.setOff(!SFX.music.off);
+    // While paused the music waits for the resume.
+    if (!SFX.music.off && state && state.phase === 'playing' && !pausedSince) SFX.music.start();
+    renderMusic();
+  });
+  renderMusic();
+
+  // Full screen (hidden where the browser cannot do it, e.g. iPhone Safari).
+  const fsBtn = $('fs');
+  const FS = window.PloinkFullscreen;
+  const renderFs = () => {
+    fsBtn.hidden = !FS.supported || FS.standalone;
+    renderToggle(fsBtn, FS.active);
+  };
+  fsBtn.addEventListener('click', () => {
+    FS.toggle();
+    renderFs();
+  });
+  FS.onChange(renderFs);
+  renderFs();
 
   // Leaving: sign off at the hub so the ninja disappears at once, then back to the start.
   const leaveConfirm = $('leave-confirm');
@@ -2108,38 +2212,14 @@
     else leaveGame();
   });
   $('leave-yes').addEventListener('click', leaveGame);
-  $('leave-no').addEventListener('click', () => { leaveConfirm.hidden = true; });
+  $('leave-no').addEventListener('click', () => {
+    leaveConfirm.hidden = true;
+    setMenu(false); // "Weiterspielen" means back into the game
+  });
   $('lobby-leave').addEventListener('click', (e) => {
     e.preventDefault();
     leaveGame();
   });
-
-  // Full screen (hidden where the browser cannot do it, e.g. iPhone Safari).
-  const fsBtn = $('fs');
-  const FS = window.PloinkFullscreen;
-  const renderFs = () => {
-    fsBtn.hidden = !FS.supported || FS.standalone;
-    fsBtn.classList.toggle('off', !FS.active);
-  };
-  fsBtn.addEventListener('click', () => {
-    FS.toggle();
-    renderFs();
-  });
-  FS.onChange(renderFs);
-  renderFs();
-
-  // Background music on/off, separate from the sound effects.
-  const musicBtn = $('music');
-  const renderMusic = () => {
-    musicBtn.classList.toggle('off', SFX.music.off);
-    musicBtn.setAttribute('aria-label', SFX.music.off ? 'Musik einschalten' : 'Musik ausschalten');
-  };
-  musicBtn.addEventListener('click', () => {
-    SFX.music.setOff(!SFX.music.off);
-    if (!SFX.music.off && state && state.phase === 'playing') SFX.music.start();
-    renderMusic();
-  });
-  renderMusic();
 
   resize();
   connect();
@@ -2158,6 +2238,9 @@
     serverNow,
     get state() { return state; },
     get me() { return me; },
+    get paused() { return !!pausedSince; },
+    setMenu,
+    gameNow,
     onFrame: null, // tests can capture frames at exact animation moments
   };
 })();
