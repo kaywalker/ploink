@@ -1330,21 +1330,23 @@
   }
 
   /**
-   * World position of the katana tip, using the same transform as drawNinja: hand at
-   * (0.24, 0), blade angled -0.95 rad, then facing/scale and the roll (canvas y down).
+   * World position of a point on the katana blade (along 0 = guard, 1 = tip), using the
+   * same transform as drawNinja: hand at (0.24, 0), blade angled -0.95 rad, the giant
+   * katana 1.8 times as long, then facing/scale and the roll (canvas y down).
    */
-  function bladeTip(n, giant) {
-    const len = 1.05 * (giant ? 1.8 : 1);
-    const lx = (0.24 + Math.cos(-0.95) * len) * n.facing * NINJA_SCALE;
-    const ly = Math.sin(-0.95) * len * NINJA_SCALE;
+  function bladePoint(n, giant, along) {
+    const d = (0.06 + 0.99 * along) * (giant ? 1.8 : 1);
+    const lx = (0.24 + Math.cos(-0.95) * d) * n.facing * NINJA_SCALE;
+    const ly = Math.sin(-0.95) * d * NINJA_SCALE;
     const c = Math.cos(n.rot);
     const s = Math.sin(n.rot);
     return { x: n.x + lx * c - ly * s, y: n.y - (lx * s + ly * c) };
   }
 
   /**
-   * Glowing trail in the player colour along the last few hundred milliseconds of
-   * movement: wide and bright at the ninja, thin and faded at the end.
+   * Slash trail of the katana in the player colour: right behind the blade it is as wide
+   * as the whole blade (guard to tip), older parts shrink towards the tip and fade, so
+   * the spinning sword sweeps a glowing crescent.
    */
   function drawTrail(id, n, giant, color, now, turbo) {
     let trail = trails.get(id);
@@ -1353,61 +1355,64 @@
     const cur = { x: n.x, y: n.y, rot: n.rot, facing: n.facing, t: now };
     const prev = trail.prev;
     trail.prev = cur;
+    const sample = (state, t) => {
+      const tip = bladePoint(state, giant, 1);
+      const base = bladePoint(state, giant, 0);
+      return { tx: tip.x, ty: tip.y, bx: base.x, by: base.y, t };
+    };
     if (!prev || Math.hypot(cur.x - prev.x, cur.y - prev.y) > 3 || Math.abs(cur.rot - prev.rot) > Math.PI * 2
       || cur.facing !== prev.facing) {
       // First frame, respawn, landing (roll reset) or a turn: start a fresh trail.
       pts.length = 0;
-      const tip = bladeTip(cur, giant);
-      pts.push({ x: tip.x, y: tip.y, t: now });
+      pts.push(sample(cur, now));
     } else {
       // The katana turns a lot between two frames: fill in the arc in small steps so the
-      // trail is a smooth curve, not a few straight chords.
+      // trail is a smooth crescent, not a few straight wedges.
       const steps = Math.min(24, Math.max(1, Math.ceil(Math.abs(cur.rot - prev.rot) / 0.08)));
       const last = pts[pts.length - 1];
       for (let i = 1; i <= steps; i++) {
         const k = i / steps;
-        const tip = bladeTip({
+        const p = sample({
           x: prev.x + (cur.x - prev.x) * k, y: prev.y + (cur.y - prev.y) * k,
           rot: prev.rot + (cur.rot - prev.rot) * k, facing: cur.facing,
-        }, giant);
-        if (i === steps && last && Math.hypot(tip.x - last.x, tip.y - last.y) < 0.03) break; // standing still
-        pts.push({ x: tip.x, y: tip.y, t: prev.t + (now - prev.t) * k });
+        }, prev.t + (now - prev.t) * k);
+        if (i === steps && last && Math.hypot(p.tx - last.tx, p.ty - last.ty) < 0.03) break; // standing still
+        pts.push(p);
       }
     }
     while (pts.length && now - pts[0].t > TRAIL_MS) pts.shift();
     if (pts.length < 2) return;
 
-    // A ribbon of quads that share their edges: no overlaps, so no bright beads at the
-    // joints. Each point's normal is averaged from its neighbours to keep it seamless.
-    const P = pts.map((p) => ({ x: sx(p.x), y: sy(p.y), k: 1 - (now - p.t) / TRAIL_MS }));
-    const N = P.map((p, i) => {
-      const a = P[Math.max(0, i - 1)];
-      const b = P[Math.min(P.length - 1, i + 1)];
-      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
-    });
-    const ribbon = (fill, width, alpha) => {
+    // Screen points; k = 1 right behind the blade, 0 at the end of the trail.
+    const P = pts.map((p) => ({
+      tx: sx(p.tx), ty: sy(p.ty), bx: sx(p.bx), by: sy(p.by), k: Math.max(0, 1 - (now - p.t) / TRAIL_MS),
+    }));
+    // Inner edge: at the blade the guard, further back closer to the tip. `share` is how
+    // much of the blade a band covers (1 = whole blade, small = a thin edge at the tip).
+    const inner = (p, share) => ({ x: p.tx + (p.bx - p.tx) * p.k * share, y: p.ty + (p.by - p.ty) * p.k * share });
+    const band = (fill, share, alpha) => {
       ctx.fillStyle = fill;
       for (let i = 1; i < P.length; i++) {
-        const k = P[i].k; // 1 at the ninja, 0 at the end
-        if (k <= 0) continue;
-        const w0 = (width * Math.max(0, P[i - 1].k)) / 2;
-        const w1 = (width * k) / 2;
-        ctx.globalAlpha = alpha * k;
+        const a = P[i - 1];
+        const b = P[i];
+        if (b.k <= 0) continue;
+        const ia = inner(a, share);
+        const ib = inner(b, share);
+        ctx.globalAlpha = alpha * b.k;
         ctx.beginPath();
-        ctx.moveTo(P[i - 1].x + N[i - 1].x * w0, P[i - 1].y + N[i - 1].y * w0);
-        ctx.lineTo(P[i].x + N[i].x * w1, P[i].y + N[i].y * w1);
-        ctx.lineTo(P[i].x - N[i].x * w1, P[i].y - N[i].y * w1);
-        ctx.lineTo(P[i - 1].x - N[i - 1].x * w0, P[i - 1].y - N[i - 1].y * w0);
+        ctx.moveTo(a.tx, a.ty);
+        ctx.lineTo(b.tx, b.ty);
+        ctx.lineTo(ib.x, ib.y);
+        ctx.lineTo(ia.x, ia.y);
         ctx.closePath();
         ctx.fill();
       }
     };
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ribbon(color, S * (turbo ? 0.5 : 0.36), 0.6);
-    // A thin core reads as a streak of light; with turbo it crackles yellow.
-    ribbon(turbo ? '#ffe156' : '#ffffff', S * (turbo ? 0.18 : 0.1), turbo ? 0.75 : 0.5);
+    band(color, 1, 0.42);
+    // A bright edge along the path of the tip; with turbo it crackles yellow.
+    band(turbo ? '#ffe156' : '#ffffff', turbo ? 0.3 : 0.16, turbo ? 0.7 : 0.5);
     ctx.restore();
   }
 
@@ -1554,6 +1559,7 @@
     fruits,
     items,
     myEffects,
+    trails,
     jump,
     slash,
     send,
