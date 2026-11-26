@@ -197,6 +197,14 @@ window.PloinkSfx = (() => {
     banana: 'soft', eggplant: 'soft',
   };
 
+  /** Struck glass bell: hard attack, bright inharmonic partials, a click, little room. */
+  function pling(freq, at = 0, level = 1) {
+    tone({ from: freq, at, attack: 0.001, decay: 0.28, peak: 0.24 * level, wet: 0.12 });
+    tone({ from: freq * 2.756, at, attack: 0.001, decay: 0.12, peak: 0.1 * level, wet: 0.1 });
+    tone({ from: freq * 5.404, at, attack: 0.001, decay: 0.05, peak: 0.05 * level, wet: 0 });
+    hiss({ filter: 'highpass', from: 6500, at, attack: 0.001, decay: 0.01, peak: 0.18 * level, wet: 0 });
+  }
+
   /** Shakuhachi-like flute: a breathy sine with a slow vibrato that swells in. */
   function flute(freq, { at = 0, length = 2, peak = 0.08 } = {}) {
     const t = ctx.currentTime + at;
@@ -404,12 +412,15 @@ window.PloinkSfx = (() => {
         hiss({ filter: 'lowpass', from: 900 * p, to: 250 * p, q: 2, at: 0.035, attack: 0.006, decay: texture === 'juicy' ? 0.14 : 0.09, peak: 0.3 * v, wet: 0.2 });
       }
     },
-    /** Confirmed own cut: a koto pluck that climbs the scale with the combo. */
+    /**
+     * Points: a hard, bright "pling" like a struck glass bell, one scale step higher
+     * per combo hit; from a 3-combo on a second, higher pling follows.
+     */
     combo(chain) {
       if (!ready()) return;
-      const step = 3 + Math.min(chain - 1, 9);
-      pluck(note(step), { peak: 0.32 });
-      if (chain > 2) pluck(note(step + 2), { at: 0.07, peak: 0.22 });
+      const step = 8 + Math.min(chain - 1, 6);
+      pling(note(step) * 2);
+      if (chain > 2) pling(note(step + 2) * 2, 0.07, 0.7);
     },
     /** Uncut fruit lands on the floor. */
     splat() {
