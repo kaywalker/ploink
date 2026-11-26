@@ -458,11 +458,11 @@ window.PloinkSfx = (() => {
      * 0-60 ms a very bright noisy strike (mostly 4-16 kHz), then a metallic ring of a few
      * strong partials (about 1.6, 2.2, 2.8, 3.3, 3.9 and 6.1 kHz; 2133 and 2191 Hz beat
      * against each other), of which 2.2 and 3.9 kHz ring longest, over a faint low hum.
-     * About one second long, -20 dB after ~0.18 s, nearly mono.
+     * About one second long, -20 dB after ~0.18 s, nearly mono. Always the same pitch.
      */
     clash() {
       if (!ready()) return;
-      const p = vary(0.03);
+      const p = 1;
       // "Tsch": the bright strike
       hiss({ filter: 'highpass', from: 4000 * p, attack: 0.001, decay: 0.06, peak: 0.55, wet: 0.15 });
       hiss({ from: 9000 * p, q: 1, attack: 0.001, decay: 0.045, peak: 0.35, wet: 0.1 });
