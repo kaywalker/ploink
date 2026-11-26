@@ -519,7 +519,7 @@
       fruits.delete(f.id);
       sliceFruit(f, pos, angle);
       if (f.type === 'nest') SFX.buzz();
-      else SFX.cut(1);
+      else SFX.cut(1, f.type);
       sendPos(now, true);
       send({ type: 'cut', id: f.id, x: round2(ninja.x), y: round2(ninja.y), angle: round2(angle) });
       vibrate(f.type === 'nest' ? 0 : 12);
@@ -663,7 +663,7 @@
           fruits.delete(f.id);
           const angle = Math.atan2(st.dy, st.dx);
           sliceFruit(f, fp, angle);
-          SFX.cut(1);
+          SFX.cut(1, f.type);
           claimForStar(st, { type: 'cut', id: f.id, x: round2(pos.x), y: round2(pos.y), angle: round2(angle) });
         }
         const hit = list.find((o) => Math.hypot(o.x - pos.x, o.y - pos.y) <= CFG.starRadius + CFG.ninjaRadius);
@@ -727,7 +727,7 @@
       : `${msg.points > 0 ? '+' : '−'}${Math.abs(msg.points)}${msg.chain > 1 ? ` · ${msg.chain}er-Kombo` : ''}`;
     const mine = msg.by.id === me.id;
     if (mine) SFX.combo(msg.chain);
-    else if (f) SFX.cut(0.4);
+    else if (f) SFX.cut(0.4, f.type);
     const at = pos || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
     if (at) {
       popups.push({

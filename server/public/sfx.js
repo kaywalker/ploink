@@ -190,6 +190,13 @@ window.PloinkSfx = (() => {
 
   const note = (step) => SCALE[Math.max(0, Math.min(SCALE.length - 1, step))];
 
+  // How the inside of each fruit sounds when it is cut.
+  const FRUIT_TEXTURE = {
+    apple: 'crunchy', golden: 'crunchy', carrot: 'crunchy',
+    orange: 'juicy', tomato: 'juicy', watermelon: 'juicy', pineapple: 'juicy',
+    banana: 'soft', eggplant: 'soft',
+  };
+
   /** Shakuhachi-like flute: a breathy sine with a slow vibrato that swells in. */
   function flute(freq, { at = 0, length = 2, peak = 0.08 } = {}) {
     const t = ctx.currentTime + at;
@@ -363,13 +370,39 @@ window.PloinkSfx = (() => {
       if (!ready()) return;
       shing({ peak: 0.3 });
     },
-    /** Blade through fruit: a sharp slice and a juicy splurt. `volume` < 1 for others. */
-    cut(volume = 1) {
+    /**
+     * Blade through fruit: "tschak!" and a wet smack. A short air swish, a crisp bright
+     * transient where the blade bites, then the inside of the fruit: crunchy fibres
+     * (apple, carrot), a juicy squelch (melon, orange, tomato, pineapple) or a soft, dull
+     * squish (banana, eggplant). `volume` < 1 for other players' cuts.
+     */
+    cut(volume = 1, fruit = 'apple') {
       if (!ready()) return;
-      const p = vary(0.12);
-      shing({ peak: 0.16 * volume, ring: false });
-      hiss({ filter: 'lowpass', from: 1100 * p, to: 260 * p, q: 3, at: 0.01, attack: 0.004, decay: 0.14, peak: 0.45 * volume, wet: 0.2 });
-      tone({ from: 150 * p, to: 70 * p, at: 0.005, attack: 0.002, decay: 0.1, peak: 0.3 * volume, wet: 0.1 });
+      const v = volume;
+      const p = vary(0.1);
+      const texture = FRUIT_TEXTURE[fruit] || 'juicy';
+      // Swish of the blade, then the bite: "tschak!"
+      hiss({ from: 1500 * p, to: 5000 * p, q: 2, attack: 0.008, decay: 0.05, peak: 0.12 * v, wet: 0.1 });
+      hiss({ filter: 'highpass', from: 3200 * p, at: 0.012, attack: 0.001, decay: 0.035, peak: 0.55 * v, wet: 0.15 });
+      hiss({ from: 2300 * p, q: 2.5, at: 0.012, attack: 0.001, decay: 0.06, peak: 0.4 * v, wet: 0.15 });
+      if (texture === 'crunchy') {
+        // Fibres tearing: a quick run of tiny cracks.
+        for (let i = 0; i < 9; i++) {
+          hiss({ from: (1800 + Math.random() * 1800) * p, q: 1.5, at: 0.02 + Math.random() * 0.06, attack: 0.001, decay: 0.006 + Math.random() * 0.008, peak: (0.35 - i * 0.025) * v, wet: 0.05 });
+        }
+      }
+      // The smack: two or three wet blips whose resonance slides down.
+      const smack = texture === 'juicy' ? [[0.03, 0.42], [0.058, 0.3], [0.09, 0.18]]
+        : texture === 'soft' ? [[0.03, 0.34], [0.065, 0.2]]
+          : [[0.05, 0.22], [0.08, 0.12]];
+      const top = texture === 'soft' ? 1000 : 1700;
+      for (const [at, pk] of smack) {
+        hiss({ from: top * p, to: (texture === 'soft' ? 380 : 550) * p, q: 6, at, attack: 0.003, decay: 0.06, peak: pk * v, wet: 0.2 });
+      }
+      // Juice body: a short, low wet splash.
+      if (texture !== 'crunchy') {
+        hiss({ filter: 'lowpass', from: 900 * p, to: 250 * p, q: 2, at: 0.035, attack: 0.006, decay: texture === 'juicy' ? 0.14 : 0.09, peak: 0.3 * v, wet: 0.2 });
+      }
     },
     /** Confirmed own cut: a koto pluck that climbs the scale with the combo. */
     combo(chain) {

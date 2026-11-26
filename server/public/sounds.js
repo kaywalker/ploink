@@ -36,7 +36,8 @@
         }
         const raw = button.dataset.arg;
         const arg = raw === undefined ? undefined : raw === 'true' ? true : Number(raw);
-        SFX[name](arg);
+        if (name === 'cut') SFX.cut(arg === undefined ? 1 : arg, button.dataset.fruit);
+        else SFX[name](arg);
       }, 30);
     });
   });
