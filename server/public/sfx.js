@@ -197,89 +197,6 @@ window.PloinkSfx = (() => {
     banana: 'soft', eggplant: 'soft',
   };
 
-  /**
-   * Struck sheet metal: a short noise burst through narrow resonances at inharmonic
-   * frequencies, like a dustbin lid or a metal plate. `size` < 1 sounds smaller/higher.
-   */
-  function metal(at, level, size = 1, ring = 0.3) {
-    const t = ctx.currentTime + at;
-    const src = ctx.createBufferSource();
-    src.buffer = noise;
-    const exciter = ctx.createGain();
-    exciter.gain.setValueAtTime(0.0001, t);
-    exciter.gain.exponentialRampToValueAtTime(1, t + 0.001);
-    exciter.gain.exponentialRampToValueAtTime(0.0001, t + 0.012);
-    src.connect(exciter);
-    const out = envelope(t, level, 0.001, ring, 0.45);
-    const r = vary(0.06) / size;
-    for (const f of [530, 1130, 1720, 2390, 3170, 4410, 5870]) {
-      const band = ctx.createBiquadFilter();
-      band.type = 'bandpass';
-      band.frequency.value = f * r;
-      band.Q.value = 28;
-      const gain = ctx.createGain();
-      gain.gain.value = 6; // narrow filters pass little energy; bring it back up
-      exciter.connect(band);
-      band.connect(gain);
-      gain.connect(out);
-    }
-    src.start(t, Math.random() * 0.5);
-    src.stop(t + 0.05);
-  }
-
-  /** One metal clank: sheet-metal clang, a few random partials and a short bright noise. */
-  function clank(at, level) {
-    metal(at, level * 1.4, 0.8 + Math.random() * 0.5, 0.18 + Math.random() * 0.15);
-    for (let i = 0; i < 3; i++) {
-      tone({ from: 900 + Math.random() * 3300, at, attack: 0.001, decay: 0.06 + Math.random() * 0.1, peak: level * (0.3 - i * 0.06), wet: 0.4 });
-    }
-    hiss({ from: 2500 + Math.random() * 2000, q: 3, at, attack: 0.001, decay: 0.02, peak: level * 0.8, wet: 0.3 });
-  }
-
-  /** A tiny high metal tink, placed left or right (`pan` -1 … 1). */
-  function tink(at, level, freq, pan = 0) {
-    const t = ctx.currentTime + at;
-    const out = ctx.createGain();
-    out.gain.setValueAtTime(0.0001, t);
-    out.gain.exponentialRampToValueAtTime(level, t + 0.001);
-    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-    let tail = out;
-    if (ctx.createStereoPanner) {
-      const panner = ctx.createStereoPanner();
-      panner.pan.value = pan;
-      out.connect(panner);
-      tail = panner;
-    }
-    tail.connect(master);
-    const send = ctx.createGain();
-    send.gain.value = 0.4;
-    tail.connect(send);
-    send.connect(reverb);
-    for (const [ratio, amount] of [[1, 1], [2.76, 0.5], [5.4, 0.25]]) {
-      const osc = ctx.createOscillator();
-      osc.frequency.value = freq * ratio;
-      const g = ctx.createGain();
-      g.gain.value = amount;
-      osc.connect(g);
-      g.connect(out);
-      osc.start(t);
-      osc.stop(t + 0.14);
-    }
-  }
-
-  let distortion = null;
-  /** Soft-clipping curve for the clash impact (built once). */
-  function distortionCurve() {
-    if (distortion) return distortion;
-    const n = 1024;
-    distortion = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * 2 - 1;
-      distortion[i] = ((1 + 40) * x) / (1 + 40 * Math.abs(x));
-    }
-    return distortion;
-  }
-
   /** Struck glass bell: hard attack, bright inharmonic partials, a click, little room. */
   function pling(freq, at = 0, level = 1, decay = 0.28, light = false) {
     tone({ from: freq, at, attack: 0.001, decay, peak: 0.24 * level, wet: 0.12 });
@@ -537,104 +454,30 @@ window.PloinkSfx = (() => {
       tone({ type: 'triangle', from: note(8), to: note(1), at: 0.04, attack: 0.005, decay: 0.35, peak: 0.12, wet: 0.4 });
     },
     /**
-     * Two katanas meet, cinema style, in five layers: both blades swooshing in, a hard
-     * distorted impact over a deep boom, a long steel ring spread across the stereo
-     * field and bending down, crackling sparks, and an echo through the hall.
+     * Two katanas meet: a clean, bright sword "tsching", modelled on a reference recording.
+     * 0-60 ms a very bright noisy strike (mostly 4-16 kHz), then a metallic ring of a few
+     * strong partials (about 1.6, 2.2, 2.8, 3.3, 3.9 and 6.1 kHz; 2133 and 2191 Hz beat
+     * against each other), of which 2.2 and 3.9 kHz ring longest, over a faint low hum.
+     * About one second long, -20 dB after ~0.18 s, nearly mono.
      */
     clash() {
       if (!ready()) return;
-      const p = vary(0.04);
-      const hit = 0.06; // the swoosh leads into the impact
-
-      // 1. Swoosh of both blades coming in
-      hiss({ from: 900 * p, to: 3500 * p, q: 1.5, attack: 0.05, decay: 0.03, peak: 0.2, wet: 0.1 });
-
-      // 2. Impact: a distorted crack and a deep boom
-      const t = ctx.currentTime + hit;
-      const crack = ctx.createBufferSource();
-      crack.buffer = noise;
-      const band = ctx.createBiquadFilter();
-      band.type = 'bandpass';
-      band.frequency.value = 1800 * p;
-      band.Q.value = 0.8;
-      const drive = ctx.createWaveShaper();
-      drive.curve = distortionCurve();
-      crack.connect(band);
-      band.connect(drive);
-      drive.connect(envelope(t, 0.55, 0.001, 0.09, 0.4));
-      metal(hit, 0.7, 1, 0.55); // the big sheet-metal clang
-      metal(hit + 0.004, 0.45, 0.4, 0.35); // and a small, bright one on top: "klirr"
-      // Jingling cascade: tiny high tinks like shards or chain links, thinning out
-      for (let i = 0; i < 16; i++) {
-        const k = i / 16;
-        tink(hit + 0.01 + k * k * 0.5 + Math.random() * 0.03, 0.2 * (1 - k * 0.7), 3000 + Math.random() * 5000, Math.random() * 1.6 - 0.8);
+      const p = vary(0.03);
+      // "Tsch": the bright strike
+      hiss({ filter: 'highpass', from: 4000 * p, attack: 0.001, decay: 0.06, peak: 0.55, wet: 0.15 });
+      hiss({ from: 9000 * p, q: 1, attack: 0.001, decay: 0.045, peak: 0.35, wet: 0.1 });
+      for (const f of [7350, 7920, 9730, 10870]) {
+        tone({ from: f * p, attack: 0.001, decay: 0.05, peak: 0.05, wet: 0.1 });
       }
-      crack.start(t, Math.random() * 0.5);
-      crack.stop(t + 0.15);
-      tone({ from: 120 * p, to: 42 * p, at: hit, attack: 0.002, decay: 0.5, peak: 0.6, wet: 0.3 });
-
-      // 3. Steel ring: detuned pairs spread left and right, bending down, with an echo
-      const bus = ctx.createGain();
-      bus.gain.value = 0.75;
-      bus.connect(master);
-      // A fast tremble makes the steel clang and rattle instead of ringing smoothly.
-      const tremble = ctx.createOscillator();
-      tremble.frequency.value = 17 * p;
-      const trembleDepth = ctx.createGain();
-      trembleDepth.gain.value = 0.45;
-      tremble.connect(trembleDepth);
-      trembleDepth.connect(bus.gain);
-      tremble.start(t);
-      tremble.stop(t + 2.2);
-      const send = ctx.createGain();
-      send.gain.value = 0.7;
-      bus.connect(send);
-      send.connect(reverb);
-      const echo = ctx.createDelay(1);
-      echo.delayTime.value = 0.19;
-      const feedback = ctx.createGain();
-      feedback.gain.value = 0.32;
-      const echoLevel = ctx.createGain();
-      echoLevel.gain.value = 0.45;
-      bus.connect(echo);
-      echo.connect(feedback);
-      feedback.connect(echo);
-      echo.connect(echoLevel);
-      echoLevel.connect(master);
-      const partials = [[740, 0.12, 1.9], [1110, 0.11, 1.6], [1650, 0.09, 1.3], [2470, 0.07, 1.0], [3700, 0.045, 0.7], [5550, 0.025, 0.45]];
-      partials.forEach(([f, pk, d], i) => {
-        for (const [detune, pan] of [[0, i % 2 ? -0.6 : 0.6], [4, i % 2 ? 0.5 : -0.5]]) {
-          const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(f * p + detune, t);
-          osc.frequency.exponentialRampToValueAtTime((f * p + detune) * 0.985, t + d);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0.0001, t);
-          g.gain.exponentialRampToValueAtTime(pk * (detune ? 0.8 : 1), t + 0.002);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-          osc.connect(g);
-          if (ctx.createStereoPanner) {
-            const panner = ctx.createStereoPanner();
-            panner.pan.value = pan;
-            g.connect(panner);
-            panner.connect(bus);
-          } else {
-            g.connect(bus);
-          }
-          osc.start(t);
-          osc.stop(t + d + 0.05);
-        }
-      });
-      // Blades scraping apart
-      hiss({ from: 5200 * p, to: 1400 * p, q: 8, at: hit + 0.01, attack: 0.005, decay: 0.3, peak: 0.28, wet: 0.4 });
-
-      // Clatter: the blades rattle against each other a few more times
-      // like metal bouncing on: hits come faster and quieter
-      [0.06, 0.15, 0.23, 0.3, 0.36, 0.41, 0.45].forEach((d, i) => clank(hit + d + Math.random() * 0.015, 0.4 * (1 - i * 0.12)));
-
-      // 4. Sparks crackling away
-      for (let i = 0; i < 16; i++) {
-        hiss({ filter: 'highpass', from: 5000 + Math.random() * 4000, at: hit + 0.04 + Math.random() * 0.45, attack: 0.001, decay: 0.006, peak: 0.16 * (1 - i / 20), wet: 0.3 });
+      // "-ing": the steel ring, the levels and lengths taken from the reference
+      for (const [f, pk, d] of [
+        [2191, 0.16, 1.0], [2133, 0.1, 0.9], [3902, 0.13, 0.8], [1582, 0.13, 0.45], [1629, 0.06, 0.35],
+        [2754, 0.05, 0.4], [3258, 0.045, 0.3], [6129, 0.06, 0.25],
+      ]) {
+        tone({ from: f * p, attack: 0.001, decay: d, peak: pk, wet: 0.3 });
       }
+      // Faint low hum under the ring
+      tone({ from: 112 * p, at: 0.01, attack: 0.02, decay: 0.8, peak: 0.05, wet: 0.2 });
     },
     /** Shield takes the hit: a gong. */
     block() {
