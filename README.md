@@ -26,8 +26,9 @@ the same two-digit room code.
   and vegetables that fall from the sky. Swipe in a direction and the ninja jumps there; up
   to three jumps in a row, every cut in the air gives one back. In the air the ninja rolls
   and the spinning katana cuts everything in reach (tap on the ground: a spin in place).
-  Combos score a bonus, wasp nests cost points and stun, a katana hit knocks other ninjas
-  away. 75-second rounds; best played in portrait.
+  Combos score a bonus, wasp nests cost points and stun. A katana hit kicks another ninja
+  away and steals 10 of their points; if both katanas are spinning, the blades clash and
+  both ninjas bounce apart instead. 75-second rounds; best played in portrait.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.

@@ -25,6 +25,7 @@
   const HIT_REACH = CFG.bladeReach * 0.95;
   const RECONNECT_DELAY_MS = 1200;
   const STEP = 1 / 120;
+  const TUMBLE_MS = 450;            // a kicked ninja cannot cut or kick back for this long
   const NINJA_SCALE = 1.2;         // drawn a bit larger than its hit box for small screens
 
   const FLESH = {
@@ -90,7 +91,7 @@
 
   const ninja = {
     x: W / 2, y: FOOT, vx: 0, vy: 0, air: false, jumps: CFG.maxJumps, rot: 0, spinDir: 1, facing: 1,
-    onPlatform: null, slashUntil: 0, stunnedUntil: 0,
+    onPlatform: null, slashUntil: 0, stunnedUntil: 0, tumbleUntil: 0,
   };
 
   // Shared clock: serverNow() ≈ Date.now() on the hub.
@@ -185,16 +186,28 @@
       case 'ninjas':
         receiveNinjas(msg.list);
         break;
-      case 'bumped':
-        ninja.air = true;
-        ninja.onPlatform = null;
-        ninja.vx = msg.vx;
-        ninja.vy = msg.vy;
-        ninja.spinDir = msg.vx >= 0 ? 1 : -1;
-        sparks(ninja.x, ninja.y, '#ffffff', 10);
-        shout(`💨 ${msg.by.name}`, msg.by.color);
-        vibrate([40, 30, 40]);
+      case 'kick':
+        sparks(msg.x, msg.y, '#ffffff', 10);
+        if (msg.target.id === me.id) {
+          knock(msg.vx, msg.vy, true);
+          shout(`💨 ${msg.by.name}${msg.points ? ` −${msg.points}` : ''}`, msg.by.color);
+          vibrate([40, 30, 40]);
+        } else if (msg.by.id === me.id) {
+          popups.push({ x: msg.x, y: msg.y + 1.7, life: 1.1, text: `Kick!${msg.points ? ` +${msg.points}` : ''}`, color: me.color });
+          vibrate(20);
+        }
         break;
+      case 'clash': {
+        sparks(msg.x, msg.y, '#ffe156', 18);
+        sparks(msg.x, msg.y, '#ffffff', 8);
+        popups.push({ x: msg.x, y: msg.y + 1.7, life: 1, text: 'Klirr!', color: '#ffe156' });
+        const push = msg.push[me.id];
+        if (push) {
+          knock(push[0], push[1], false);
+          vibrate([15, 20, 15]);
+        }
+        break;
+      }
       case 'stunned':
         ninja.stunnedUntil = performance.now() + msg.ms;
         shout('🐝 Autsch!', '#ffb84d');
@@ -248,7 +261,7 @@
   function placeAtStart(x) {
     Object.assign(ninja, {
       x: Number.isFinite(x) ? x : W / 2, y: FOOT, vx: 0, vy: 0, air: false, jumps: CFG.maxJumps,
-      rot: 0, onPlatform: null, slashUntil: 0, stunnedUntil: 0,
+      rot: 0, onPlatform: null, slashUntil: 0, stunnedUntil: 0, tumbleUntil: 0,
     });
   }
 
@@ -313,9 +326,20 @@
     ninja.air = true;
     ninja.onPlatform = null;
     ninja.jumps--;
+    ninja.tumbleUntil = 0; // jumping is how a kicked ninja catches himself
     if (Math.abs(dx) > 0.15) ninja.facing = dx > 0 ? 1 : -1;
     ninja.spinDir = ninja.facing;
     vibrate(8);
+  }
+
+  /** Thrown through the air by another katana. A kicked ninja tumbles with the sword away. */
+  function knock(vx, vy, tumble) {
+    ninja.air = true;
+    ninja.onPlatform = null;
+    ninja.vx = vx;
+    ninja.vy = vy;
+    ninja.spinDir = vx >= 0 ? 1 : -1;
+    if (tumble) ninja.tumbleUntil = performance.now() + TUMBLE_MS;
   }
 
   function slash() {
@@ -381,7 +405,7 @@
     }
   }
 
-  const bladeActive = (now) => (ninja.air || now < ninja.slashUntil) && now >= ninja.stunnedUntil;
+  const bladeActive = (now) => (ninja.air || now < ninja.slashUntil) && now >= ninja.stunnedUntil && now >= ninja.tumbleUntil;
 
   /** The spinning katana cuts every fruit within reach. */
   function checkCuts(now) {
@@ -409,9 +433,7 @@
       if ((bumpCooldown.get(o.id) || 0) > now) continue;
       if (Math.hypot(o.x - ninja.x, o.y - ninja.y) > HIT_REACH + CFG.ninjaRadius) continue;
       bumpCooldown.set(o.id, now + CFG.bumpCooldownMs + 200);
-      sparks((o.x + ninja.x) / 2, (o.y + ninja.y) / 2, '#ffffff', 8);
-      popups.push({ x: o.x, y: o.y + 0.9, life: 1, text: 'Kick!', color: me.color });
-      send({ type: 'bump', id: o.id });
+      send({ type: 'bump', id: o.id }); // the hub decides: kick or clash
     }
   }
 
@@ -636,7 +658,7 @@
 
   /** Short message right above the own ninja: where the player is looking anyway. */
   function shout(text, color) {
-    popups.push({ x: ninja.x, y: ninja.y + 1.4, life: 1.3, text, color });
+    popups.push({ x: ninja.x, y: ninja.y + 1.7, life: 1.3, text, color });
   }
 
   function toast(text, color) {
@@ -1249,7 +1271,7 @@
     if (me.id && now - lastPosSent >= POS_INTERVAL_MS) {
       const key = `${round2(ninja.x)}:${round2(ninja.y)}:${round2(ninja.rot)}`;
       if (key !== lastPosKey || now - lastPosSent > 500) {
-        send({ type: 'pos', x: round2(ninja.x), y: round2(ninja.y), rot: round2(ninja.rot), air: ninja.air || now < ninja.slashUntil, facing: ninja.facing });
+        send({ type: 'pos', x: round2(ninja.x), y: round2(ninja.y), rot: round2(ninja.rot), air: bladeActive(now), facing: ninja.facing });
         lastPosKey = key;
         lastPosSent = now;
       }

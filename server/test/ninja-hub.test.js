@@ -10,7 +10,6 @@ Object.assign(hub.CONFIG, {
   countdownMs: 50,
   roundMs: 4000,
   salvoEveryMs: 60_000,
-  bumpCooldownMs: 0,
 });
 
 function fakeClient(name) {
@@ -144,18 +143,50 @@ async function main() {
   assert.ok(room.fruits.has(f3.id), 'a stunned ninja cannot cut');
   console.log('✓ the wasp nest costs points and stuns');
 
-  // Ben stands next to Anna; her katana knocks him away to the right.
+  // Ben stands next to Anna; her katana kicks him away to the right and steals points.
   b.send({ type: 'pos', x: 4.2, y: 2, rot: 0, air: false, facing: -1 });
   anna.stunnedUntil = 0;
+  ben.score = 30;
   await sleep(20);
   a.send({ type: 'bump', id: ben.id });
-  const bumped = await b.next((m) => m.type === 'bumped');
-  assert.equal(bumped.by.id, anna.id);
-  assert.ok(bumped.vx > 0 && bumped.vy > 0, `knocked up and away (${bumped.vx}, ${bumped.vy})`);
-  console.log('✓ the katana knocks other ninjas away');
+  const kick = await b.next((m) => m.type === 'kick');
+  assert.equal(kick.by.id, anna.id);
+  assert.equal(kick.target.id, ben.id);
+  assert.equal(kick.points, hub.CONFIG.kickSteal);
+  assert.ok(kick.vx > 0 && kick.vy > 0, `knocked up and away (${kick.vx}, ${kick.vy})`);
+  assert.equal(anna.score, 0 + hub.CONFIG.kickSteal);
+  assert.equal(ben.score, 30 - hub.CONFIG.kickSteal);
+  console.log('✓ a kick knocks the other ninja away and steals points');
+
+  // A ninja without points loses nothing.
+  ben.score = 0;
+  anna.bumpReadyAt = 0;
+  a.send({ type: 'bump', id: ben.id });
+  const empty = await b.next((m) => m.type === 'kick');
+  assert.equal(empty.points, 0);
+  assert.equal(ben.score, 0);
+  console.log('✓ nothing to steal from a ninja with zero points');
+
+  // Ben is spinning too: the katanas clash, both bounce apart, no points change hands.
+  ben.score = 20;
+  const annaBefore = anna.score;
+  anna.bumpReadyAt = 0;
+  b.send({ type: 'pos', x: 4.2, y: 2, rot: 2, air: true, facing: -1 });
+  await sleep(20);
+  a.send({ type: 'bump', id: ben.id });
+  const clash = await b.next((m) => m.type === 'clash');
+  assert.ok(clash.push[anna.id][0] < 0, 'Anna bounces to the left');
+  assert.ok(clash.push[ben.id][0] > 0, 'Ben bounces to the right');
+  assert.equal(anna.score, annaBefore);
+  assert.equal(ben.score, 20);
+  // Ben's phone reports the same contact a moment later: ignored.
+  b.send({ type: 'bump', id: anna.id });
+  await sleep(50);
+  assert.equal(b.take((m) => m.type === 'clash' || m.type === 'kick'), null);
+  console.log('✓ two spinning katanas clash and bounce both ninjas apart');
 
   const end = await a.next((m) => m.type === 'roundEnd', 6000);
-  assert.equal(end.results[0].id, anna.id);
+  assert.equal(end.results[0].id, ben.id, 'Ben leads with 20 points');
   await a.next((m) => m.type === 'state' && m.phase === 'lobby');
   console.log('✓ round ends with results');
 

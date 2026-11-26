@@ -47,6 +47,9 @@
     stunMs: 1_300,
     bumpSpeed: 9,
     bumpCooldownMs: 600,
+    kickSteal: 10,              // points a kick takes from the kicked ninja
+    clashSpeed: 8,              // two spinning katanas bounce both ninjas apart
+    spinFreshMs: 400,           // a reported spin counts for this long
 
     cutTolerance: 0.9,          // slack for latency when checking a claimed cut
     positionTolerance: 2.5,     // claimed position vs. the last reported one
@@ -326,7 +329,11 @@
       this.broadcastState();
     }
 
-    /** The spinning katana of `player` hits another ninja: knock them away. */
+    /**
+     * The spinning katana of `player` hits another ninja. If that ninja is spinning too,
+     * the blades clash and both bounce apart; otherwise it is a kick that knocks the
+     * other ninja away and steals some of their points.
+     */
     bump(player, msg) {
       if (this.phase === 'lobby') return;
       const now = Date.now();
@@ -337,14 +344,33 @@
       const dy = target.pos.y - player.pos.y;
       const dist = Math.hypot(dx, dy);
       if (dist > CONFIG.bladeReach + CONFIG.ninjaRadius + CONFIG.positionTolerance) return;
-      player.bumpReadyAt = now + CONFIG.bumpCooldownMs;
       const len = dist || 1;
-      target.send({
-        type: 'bumped',
-        by: { id: player.id, name: player.name, color: player.color },
-        vx: round2((dx / len) * CONFIG.bumpSpeed),
-        vy: round2(Math.max(0.4, dy / len + 0.6) * CONFIG.bumpSpeed * 0.7),
+      const ux = dist ? dx / len : 1;
+      const uy = dist ? dy / len : 0;
+      const at = { x: round2((player.pos.x + target.pos.x) / 2), y: round2((player.pos.y + target.pos.y) / 2) };
+      const who = (p) => ({ id: p.id, name: p.name, color: p.color });
+      player.bumpReadyAt = now + CONFIG.bumpCooldownMs;
+
+      const targetSpinning = target.pos.air && now - target.pos.at <= CONFIG.spinFreshMs && now >= target.stunnedUntil;
+      if (targetSpinning) {
+        target.bumpReadyAt = now + CONFIG.bumpCooldownMs; // its own report of the same contact is ignored
+        const push = (sign) => [round2(sign * ux * CONFIG.clashSpeed), round2(Math.max(0.5, sign * uy + 0.7) * CONFIG.clashSpeed * 0.6)];
+        this.broadcast({
+          type: 'clash', ...at, a: who(player), b: who(target),
+          push: { [player.id]: push(-1), [target.id]: push(1) },
+        });
+        return;
+      }
+
+      const points = this.phase === 'playing' ? Math.min(CONFIG.kickSteal, Math.max(0, target.score)) : 0;
+      target.score -= points;
+      player.score += points;
+      this.broadcast({
+        type: 'kick', ...at, by: who(player), target: who(target), points,
+        vx: round2(ux * CONFIG.bumpSpeed),
+        vy: round2(Math.max(0.4, uy + 0.6) * CONFIG.bumpSpeed * 0.7),
       });
+      if (points) this.broadcastState();
     }
 
     removeIfEmpty() {
