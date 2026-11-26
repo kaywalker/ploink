@@ -23,9 +23,16 @@
   const POS_INTERVAL_MS = 66;
   const INTERP_DELAY_MS = 110;
   const HIT_REACH = CFG.bladeReach * 0.95;
+  const ITEM_LOOK = {
+    giant:  { icon: '🗡️', label: 'Riesen-Katana', rim: '#dfe7f2' },
+    double: { icon: '×2', label: 'Doppelte Punkte', rim: '#ffd23f' },
+    shield: { icon: '🛡️', label: 'Schild', rim: '#4dd6ff' },
+    turbo:  { icon: '⚡', label: 'Turbo', rim: '#ffe156' },
+  };
+  const BIT = Object.fromEntries(Object.entries(HUB.ITEMS).map(([kind, def]) => [kind, def.bit]));
   const RECONNECT_DELAY_MS = 1200;
   const STEP = 1 / 120;
-  const TRAIL_MS = 550;             // how long a ninja's light trail lasts
+  const TRAIL_MS = 320;             // how long the light trail of a katana tip lasts
   const TUMBLE_MS = 450;            // a kicked ninja cannot cut or kick back for this long
   const NINJA_SCALE = 1.2;         // drawn a bit larger than its hit box for small screens
 
@@ -88,6 +95,8 @@
   const particles = [];
   const splats = [];
   const popups = [];
+  const items = new Map();          // id -> power-up bubble (same path formula as fruit)
+  const myEffects = {};             // item kind -> active until (performance.now)
   const trails = new Map();         // id -> recent positions [{x, y, t}] for the light trail
   const bumpCooldown = new Map();   // id -> time when the own katana may knock them again
 
@@ -185,10 +194,32 @@
       case 'cut':
         handleCut(msg);
         break;
+      case 'item':
+        items.set(msg.item.id, msg.item);
+        break;
+      case 'items':
+        items.clear();
+        for (const it of msg.list) items.set(it.id, it);
+        break;
+      case 'collected':
+        handleCollected(msg);
+        break;
       case 'ninjas':
         receiveNinjas(msg.list);
         break;
       case 'kick':
+        if (msg.blocked) {
+          // The target's shield took the hit: the kicker bounces off.
+          sparks(msg.x, msg.y, '#4dd6ff', 14);
+          if (msg.by.id === me.id) {
+            knock(msg.vx, msg.vy, false);
+            shout('🛡️ Abgeprallt!', '#4dd6ff');
+          } else if (msg.target.id === me.id) {
+            myEffects.shield = 0;
+            shout('🛡️ Geblockt!', '#4dd6ff');
+          }
+          break;
+        }
         sparks(msg.x, msg.y, '#ffffff', 10);
         if (msg.target.id === me.id) {
           knock(msg.vx, msg.vy, true);
@@ -242,8 +273,12 @@
     $('hud-timer').hidden = msg.phase !== 'playing';
     lobby.hidden = msg.phase !== 'lobby';
     countdownEl.hidden = msg.phase !== 'countdown';
-    if (msg.phase !== 'playing') fruits.clear();
+    if (msg.phase !== 'playing') {
+      fruits.clear();
+      items.clear();
+    }
     if (msg.phase === 'countdown' && previous !== 'countdown') placeAtStart(startX);
+    if (msg.phase !== 'playing') for (const kind of Object.keys(myEffects)) myEffects[kind] = 0;
 
     if (msg.phase === 'lobby') {
       clearTimeout(hintTimer);
@@ -270,12 +305,12 @@
   function receiveNinjas(list) {
     const t = performance.now();
     const seen = new Set();
-    for (const [id, x, y, rot, air, stun, facing] of list) {
+    for (const [id, x, y, rot, air, stun, facing, eff] of list) {
       if (id === me.id) continue;
       seen.add(id);
       let buf = others.get(id);
       if (!buf) others.set(id, (buf = []));
-      buf.push({ t, x, y, rot, air, stun, facing });
+      buf.push({ t, x, y, rot, air, stun, facing, eff: eff || 0 });
       if (buf.length > 12) buf.shift();
     }
     for (const id of others.keys()) if (!seen.has(id)) others.delete(id);
@@ -299,7 +334,7 @@
       const lerp = (p, q) => p + (q - p) * k;
       // Landing resets the roll to 0: do not spin backwards through the whole turn.
       const rot = Math.abs(b.rot - a.rot) > Math.PI * 1.5 ? b.rot : lerp(a.rot, b.rot);
-      out.push({ id, x: lerp(a.x, b.x), y: lerp(a.y, b.y), rot, air: b.air, stun: b.stun, facing: b.facing });
+      out.push({ id, x: lerp(a.x, b.x), y: lerp(a.y, b.y), rot, air: b.air, stun: b.stun, facing: b.facing, eff: b.eff });
     }
     return out;
   }
@@ -323,8 +358,9 @@
     dy /= len;
     // Air jumps are unlimited; a little puff under the feet shows each one.
     puff(ninja.x, ninja.y - FOOT);
-    ninja.vx = dx * CFG.jumpSpeed;
-    ninja.vy = dy * CFG.jumpSpeed;
+    const speed = CFG.jumpSpeed * (effectOn('turbo') ? CFG.turboFactor : 1);
+    ninja.vx = dx * speed;
+    ninja.vy = dy * speed;
     ninja.air = true;
     ninja.onPlatform = null;
     ninja.tumbleUntil = 0; // jumping is how a kicked ninja catches himself
@@ -416,10 +452,11 @@
       if (pos.y > H + 1) continue; // not in the dojo yet
       const dx = pos.x - ninja.x;
       const dy = pos.y - ninja.y;
-      if (Math.hypot(dx, dy) > HIT_REACH + f.r) continue;
+      if (Math.hypot(dx, dy) > myReach() + f.r) continue;
       const angle = Math.atan2(dy, dx);
       fruits.delete(f.id);
       sliceFruit(f, pos, angle);
+      sendPos(now, true);
       send({ type: 'cut', id: f.id, x: round2(ninja.x), y: round2(ninja.y), angle: round2(angle) });
       vibrate(f.type === 'nest' ? 0 : 12);
     }
@@ -430,10 +467,54 @@
     if (!state || state.phase === 'lobby' || !bladeActive(now)) return;
     for (const o of list) {
       if ((bumpCooldown.get(o.id) || 0) > now) continue;
-      if (Math.hypot(o.x - ninja.x, o.y - ninja.y) > HIT_REACH + CFG.ninjaRadius) continue;
+      if (Math.hypot(o.x - ninja.x, o.y - ninja.y) > myReach() + CFG.ninjaRadius) continue;
       bumpCooldown.set(o.id, now + CFG.bumpCooldownMs + 200);
+      sendPos(now, true);
       send({ type: 'bump', id: o.id }); // the hub decides: kick or clash
     }
+  }
+
+  const effectOn = (kind, now = performance.now()) => (myEffects[kind] || 0) > now;
+  const myReach = () => HIT_REACH + (effectOn('giant') ? CFG.giantReach * 0.95 : 0);
+  const myBits = (now) => Object.keys(BIT).reduce((bits, kind) => bits | (effectOn(kind, now) ? BIT[kind] : 0), 0);
+
+  /** Body or katana touches a power-up bubble. */
+  function checkCollect(now) {
+    if (!state || state.phase !== 'playing' || now < ninja.stunnedUntil) return;
+    const t = serverNow();
+    const reach = bladeActive(now) ? myReach() : CFG.ninjaRadius;
+    for (const it of items.values()) {
+      const pos = HUB.fruitPosition(it, t);
+      if (pos.y > H + 1 || pos.y < 0) continue; // still in the floor or gone at the top
+      if (Math.hypot(pos.x - ninja.x, pos.y - ninja.y) > reach + it.r) continue;
+      items.delete(it.id);
+      popBubble(it, pos);
+      sendPos(now, true);
+      send({ type: 'collect', id: it.id, x: round2(ninja.x), y: round2(ninja.y) });
+    }
+  }
+
+  function handleCollected(msg) {
+    const it = items.get(msg.id);
+    let pos = null;
+    if (it) {
+      items.delete(msg.id);
+      pos = HUB.fruitPosition(it, serverNow());
+      popBubble(it, pos);
+    }
+    const look = ITEM_LOOK[msg.kind];
+    if (msg.by.id === me.id) {
+      myEffects[msg.kind] = performance.now() + msg.ms;
+      shout(`${look.icon} ${look.label}!`, look.rim);
+      vibrate([20, 30, 20]);
+    } else if (pos) {
+      popups.push({ x: pos.x, y: pos.y + 0.5, life: 1, text: `${msg.by.name}: ${look.icon}`, color: msg.by.color });
+    }
+  }
+
+  function popBubble(it, pos) {
+    sparks(pos.x, pos.y, ITEM_LOOK[it.kind].rim, 12);
+    sparks(pos.x, pos.y, '#ffffff', 6);
   }
 
   function handleCut(msg) {
@@ -444,7 +525,9 @@
       pos = HUB.fruitPosition(f, serverNow());
       sliceFruit(f, pos, msg.angle);
     }
-    const label = `${msg.points > 0 ? '+' : '−'}${Math.abs(msg.points)}${msg.chain > 1 ? ` · ${msg.chain}er-Kombo` : ''}`;
+    if (msg.shielded && msg.by.id === me.id) myEffects.shield = 0;
+    const label = msg.shielded ? '🛡️ geschützt'
+      : `${msg.points > 0 ? '+' : '−'}${Math.abs(msg.points)}${msg.chain > 1 ? ` · ${msg.chain}er-Kombo` : ''}`;
     const mine = msg.by.id === me.id;
     const at = pos || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
     if (at) {
@@ -503,6 +586,9 @@
 
   function updateEffects(dt) {
     const t = serverNow();
+    for (const it of items.values()) {
+      if (t >= it.t0 + HUB.fruitLifetime(it)) items.delete(it.id); // floated out at the top
+    }
     // Fruit that reaches the floor uncut splats.
     for (const f of fruits.values()) {
       if (t >= f.t0 + HUB.fruitLifetime(f)) {
@@ -657,7 +743,9 @@
 
   /** Short message right above the own ninja: where the player is looking anyway. */
   function shout(text, color) {
-    popups.push({ x: ninja.x, y: ninja.y + 1.7, life: 1.3, text, color });
+    // Messages arriving together stack upwards instead of overlapping.
+    const fresh = popups.filter((p) => p.shout && p.life > 0.9).length;
+    popups.push({ x: ninja.x, y: ninja.y + 1.7 + fresh * 0.5, life: 1.3, text, color, shout: true });
   }
 
   function toast(text, color) {
@@ -1049,15 +1137,28 @@
     ctx.fill();
 
     const spinning = opts.spinning && !n.stun;
+    const eff = opts.eff || 0;
+    const giant = eff & BIT.giant;
     ctx.save();
     ctx.translate(px, py);
     ctx.scale(S, S);
+    if (eff & BIT.double) {
+      // Golden aura: double points
+      const pulse = 0.85 + 0.15 * Math.sin(t * 8);
+      const aura = ctx.createRadialGradient(0, 0, 0.2, 0, 0, 1.1 * pulse);
+      aura.addColorStop(0, 'rgba(255, 210, 63, 0.55)');
+      aura.addColorStop(1, 'rgba(255, 210, 63, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.1 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (spinning) {
       // Blur ring of the spinning katana
-      ctx.strokeStyle = 'rgba(220, 235, 255, 0.28)';
-      ctx.lineWidth = 0.28;
+      ctx.strokeStyle = giant ? 'rgba(220, 235, 255, 0.4)' : 'rgba(220, 235, 255, 0.28)';
+      ctx.lineWidth = giant ? 0.4 : 0.28;
       ctx.beginPath();
-      ctx.arc(0, 0, CFG.bladeReach - 0.1, 0, Math.PI * 2);
+      ctx.arc(0, 0, CFG.bladeReach + (giant ? CFG.giantReach : 0) - 0.1, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.rotate(n.rot);
@@ -1110,6 +1211,7 @@
     ctx.beginPath();
     ctx.ellipse(0.02, 0, 0.04, 0.1, 0, 0, Math.PI * 2);
     ctx.fill();
+    if (giant) ctx.scale(1.8, 1.3); // the giant katana: same sword, much longer
     ctx.fillStyle = '#dfe7f2';
     ctx.beginPath();
     ctx.moveTo(0.05, -0.04);
@@ -1149,6 +1251,23 @@
     ctx.globalAlpha = 1;
     ctx.lineCap = 'butt';
 
+    // Shield bubble around the ninja
+    if (eff & BIT.shield) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(77, 214, 255, 0.85)';
+      ctx.fillStyle = 'rgba(77, 214, 255, 0.14)';
+      ctx.lineWidth = Math.max(1.5, S * 0.06);
+      ctx.beginPath();
+      ctx.arc(px, py, S * 0.82, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.beginPath();
+      ctx.arc(px, py, S * 0.66, Math.PI * 1.1, Math.PI * 1.45);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // Dizzy stars while stunned
     if (n.stun) {
       ctx.fillStyle = '#ffe156';
@@ -1167,19 +1286,94 @@
     ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
     ctx.shadowBlur = 4;
     ctx.fillText(label, px, py - S * 1.15);
+    // The own active power-ups with the seconds left
+    if (opts.isMe) {
+      const active = Object.keys(ITEM_LOOK).filter((kind) => effectOn(kind, now));
+      if (active.length) {
+        ctx.font = `700 ${Math.max(10, Math.round(S * 0.3))}px system-ui, sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        const text = active.map((kind) => `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`).join('   ');
+        ctx.fillText(text, px, py - S * 1.55);
+      }
+    }
     ctx.shadowBlur = 0;
+  }
+
+  /** A power-up bubble: glassy sphere with the item's icon. */
+  function drawItem(it, pos, t) {
+    const look = ITEM_LOOK[it.kind];
+    const px = sx(pos.x);
+    const py = sy(pos.y) + Math.sin(t * 3 + it.id) * S * 0.04;
+    const r = it.r * S * (1 + 0.05 * Math.sin(t * 5 + it.id));
+    const glass = ctx.createRadialGradient(px - r * 0.3, py - r * 0.3, r * 0.1, px, py, r);
+    glass.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    glass.addColorStop(0.6, 'rgba(255, 255, 255, 0.12)');
+    glass.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
+    ctx.save();
+    ctx.shadowColor = look.rim;
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = glass;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = look.rim;
+    ctx.lineWidth = Math.max(1.5, S * 0.05);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 ${Math.round(r * 1.05)}px system-ui, sans-serif`;
+    ctx.fillStyle = look.rim;
+    ctx.fillText(look.icon, px, py + r * 0.05);
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /**
+   * World position of the katana tip, using the same transform as drawNinja: hand at
+   * (0.24, 0), blade angled -0.95 rad, then facing/scale and the roll (canvas y down).
+   */
+  function bladeTip(n, giant) {
+    const len = 1.05 * (giant ? 1.8 : 1);
+    const lx = (0.24 + Math.cos(-0.95) * len) * n.facing * NINJA_SCALE;
+    const ly = Math.sin(-0.95) * len * NINJA_SCALE;
+    const c = Math.cos(n.rot);
+    const s = Math.sin(n.rot);
+    return { x: n.x + lx * c - ly * s, y: n.y - (lx * s + ly * c) };
   }
 
   /**
    * Glowing trail in the player colour along the last few hundred milliseconds of
    * movement: wide and bright at the ninja, thin and faded at the end.
    */
-  function drawTrail(id, x, y, color, now) {
-    let pts = trails.get(id);
-    if (!pts) trails.set(id, (pts = []));
-    const last = pts[pts.length - 1];
-    if (last && Math.hypot(x - last.x, y - last.y) > 3) pts.length = 0; // respawn or a jump in the data
-    if (!last || Math.hypot(x - last.x, y - last.y) > 0.03) pts.push({ x, y, t: now });
+  function drawTrail(id, n, giant, color, now, turbo) {
+    let trail = trails.get(id);
+    if (!trail) trails.set(id, (trail = { pts: [], prev: null }));
+    const { pts } = trail;
+    const cur = { x: n.x, y: n.y, rot: n.rot, facing: n.facing, t: now };
+    const prev = trail.prev;
+    trail.prev = cur;
+    if (!prev || Math.hypot(cur.x - prev.x, cur.y - prev.y) > 3 || Math.abs(cur.rot - prev.rot) > Math.PI * 2
+      || cur.facing !== prev.facing) {
+      // First frame, respawn, landing (roll reset) or a turn: start a fresh trail.
+      pts.length = 0;
+      const tip = bladeTip(cur, giant);
+      pts.push({ x: tip.x, y: tip.y, t: now });
+    } else {
+      // The katana turns a lot between two frames: fill in the arc in small steps so the
+      // trail is a smooth curve, not a few straight chords.
+      const steps = Math.min(24, Math.max(1, Math.ceil(Math.abs(cur.rot - prev.rot) / 0.08)));
+      const last = pts[pts.length - 1];
+      for (let i = 1; i <= steps; i++) {
+        const k = i / steps;
+        const tip = bladeTip({
+          x: prev.x + (cur.x - prev.x) * k, y: prev.y + (cur.y - prev.y) * k,
+          rot: prev.rot + (cur.rot - prev.rot) * k, facing: cur.facing,
+        }, giant);
+        if (i === steps && last && Math.hypot(tip.x - last.x, tip.y - last.y) < 0.03) break; // standing still
+        pts.push({ x: tip.x, y: tip.y, t: prev.t + (now - prev.t) * k });
+      }
+    }
     while (pts.length && now - pts[0].t > TRAIL_MS) pts.shift();
     if (pts.length < 2) return;
 
@@ -1211,8 +1405,9 @@
     };
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ribbon(color, S * 0.66, 0.55);
-    ribbon('#ffffff', S * 0.16, 0.4); // a thin white core reads as a streak of light
+    ribbon(color, S * (turbo ? 0.5 : 0.36), 0.6);
+    // A thin core reads as a streak of light; with turbo it crackles yellow.
+    ribbon(turbo ? '#ffe156' : '#ffffff', S * (turbo ? 0.18 : 0.1), turbo ? 0.75 : 0.5);
     ctx.restore();
   }
 
@@ -1273,25 +1468,30 @@
       if (pos.y - f.r > H + 3) continue;
       drawFruit(f, pos, t);
     }
+    for (const it of items.values()) {
+      const pos = HUB.fruitPosition(it, st);
+      if (pos.y - it.r > H + 3) continue;
+      drawItem(it, pos, t);
+    }
     for (const h of halves) drawHalf(h, t);
     // Trails first, so every ninja is drawn on top of all of them.
     const live = new Set();
     for (const o of list) {
       live.add(o.id);
-      drawTrail(o.id, o.x, o.y, (playerInfo.get(o.id) || {}).color || '#ccc', now);
+      drawTrail(o.id, o, o.eff & BIT.giant, (playerInfo.get(o.id) || {}).color || '#ccc', now, o.eff & BIT.turbo);
     }
     if (me.id) {
       live.add(me.id);
-      drawTrail(me.id, ninja.x, ninja.y, me.color, now);
+      drawTrail(me.id, ninja, effectOn('giant', now), me.color, now, effectOn('turbo', now));
     }
     for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
     for (const o of list) {
       const info = playerInfo.get(o.id) || { name: '?', color: '#ccc' };
-      drawNinja(o, info.color, info.name, now, { spinning: !!o.air });
+      drawNinja(o, info.color, info.name, now, { spinning: !!o.air, eff: o.eff });
     }
     if (me.id) {
       const stun = now < ninja.stunnedUntil;
-      drawNinja({ ...ninja, stun }, me.color, '▼ du', now, { isMe: true, spinning: bladeActive(now) });
+      drawNinja({ ...ninja, stun }, me.color, '▼ du', now, { isMe: true, spinning: bladeActive(now), eff: myBits(now) });
     }
     drawEffects();
   }
@@ -1304,6 +1504,20 @@
   let lastPosSent = 0;
   let lastPosKey = '';
 
+  /**
+   * Report the own ninja to the hub (throttled). Claims (cut, collect, bump) force a
+   * fresh report first, so the hub never checks them against a stale position.
+   */
+  function sendPos(now, force) {
+    if (!me.id) return;
+    const key = `${round2(ninja.x)}:${round2(ninja.y)}:${round2(ninja.rot)}`;
+    if (!force && key === lastPosKey && now - lastPosSent <= 500) return;
+    if (force && key === lastPosKey) return;
+    send({ type: 'pos', x: round2(ninja.x), y: round2(ninja.y), rot: round2(ninja.rot), air: bladeActive(now), facing: ninja.facing });
+    lastPosKey = key;
+    lastPosSent = now;
+  }
+
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
@@ -1313,17 +1527,11 @@
       acc -= STEP;
     }
     checkCuts(now);
+    checkCollect(now);
     const list = otherNinjas(now);
     checkBumps(now, list);
 
-    if (me.id && now - lastPosSent >= POS_INTERVAL_MS) {
-      const key = `${round2(ninja.x)}:${round2(ninja.y)}:${round2(ninja.rot)}`;
-      if (key !== lastPosKey || now - lastPosSent > 500) {
-        send({ type: 'pos', x: round2(ninja.x), y: round2(ninja.y), rot: round2(ninja.rot), air: bladeActive(now), facing: ninja.facing });
-        lastPosKey = key;
-        lastPosSent = now;
-      }
-    }
+    if (now - lastPosSent >= POS_INTERVAL_MS) sendPos(now, false);
 
     updateEffects(dt);
     updateClocks();
@@ -1344,6 +1552,8 @@
   window.__ninja = {
     ninja,
     fruits,
+    items,
+    myEffects,
     jump,
     slash,
     send,

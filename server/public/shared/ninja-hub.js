@@ -50,6 +50,11 @@
     clashSpeed: 8,              // two spinning katanas bounce both ninjas apart
     spinFreshMs: 400,           // a reported spin counts for this long
 
+    itemEveryMs: 7_000,         // a power-up bubble floats down about this often
+    itemRadius: 0.45,
+    giantReach: 1.0,            // extra katana reach with the giant katana
+    turboFactor: 1.35,          // jump speed with turbo (applied on the phone)
+
     cutTolerance: 0.9,          // slack for latency when checking a claimed cut
     positionTolerance: 2.5,     // claimed position vs. the last reported one
     disconnectGraceMs: 60_000,
@@ -79,6 +84,14 @@
     nest:       { points: -25, weight: 8, r: 0.4 },   // wasp nest: costs points and stuns
   };
 
+  // Power-ups in floating bubbles. `bit` marks an active effect in the ninja snapshots.
+  const ITEMS = {
+    giant:  { ms: 8_000,  bit: 1, weight: 3 },  // 🗡️ longer katana
+    double: { ms: 10_000, bit: 2, weight: 3 },  // ✨ double points
+    shield: { ms: 12_000, bit: 4, weight: 2 },  // 🛡️ blocks one kick or wasp nest
+    turbo:  { ms: 8_000,  bit: 8, weight: 3 },  // ⚡ stronger jumps
+  };
+
   const COLORS = ['#ff5d73', '#4dd6ff', '#7ee081', '#ffb84d', '#c77dff', '#ffe156'];
 
   const rooms = new Map();
@@ -103,6 +116,19 @@
     return 'apple';
   }
 
+  function pickItemKind() {
+    const total = Object.values(ITEMS).reduce((s, i) => s + i.weight, 0);
+    let r = Math.random() * total;
+    for (const [kind, def] of Object.entries(ITEMS)) {
+      r -= def.weight;
+      if (r <= 0) return kind;
+    }
+    return 'giant';
+  }
+
+  const hasEffect = (p, kind, now) => (p.effects[kind] || 0) > now;
+  const effectBits = (p, now) => Object.entries(ITEMS).reduce((bits, [kind, def]) => bits | (hasEffect(p, kind, now) ? def.bit : 0), 0);
+
   /** Position and rotation of a fruit at hub time `now` (same formula on every phone). */
   function fruitPosition(f, now) {
     const t = Math.max(0, (now - f.t0) / 1000);
@@ -117,8 +143,9 @@
     };
   }
 
-  /** Milliseconds until the fruit touches the floor. */
+  /** Milliseconds until the fruit touches the floor (or a rising bubble leaves at the top). */
   function fruitLifetime(f) {
+    if (f.rise) return ((CONFIG.height + 3 - f.y0) / -f.v0) * 1000;
     const drop = f.y0 - f.r;
     return ((-f.v0 + Math.sqrt(f.v0 * f.v0 + 2 * f.g * drop)) / f.g) * 1000;
   }
@@ -128,6 +155,8 @@
       this.code = code;
       this.players = new Map(); // token -> player
       this.fruits = new Map();
+      this.items = new Map();   // power-up bubbles, same path formula as the fruit
+      this.nextItemAt = 0;
       this.phase = 'lobby';     // lobby | countdown | playing
       this.phaseEndsAt = 0;
       this.lastResults = null;
@@ -185,12 +214,15 @@
       this.phase = 'playing';
       this.phaseEndsAt = now + CONFIG.roundMs;
       this.fruits.clear();
+      this.items.clear();
       this.spawnBudget = 1;
       this.nextSalvoAt = now + CONFIG.salvoEveryMs;
+      this.nextItemAt = now + CONFIG.itemEveryMs * 0.6;
       for (const p of this.players.values()) {
         p.score = 0;
         p.chain = 0;
         p.stunnedUntil = 0;
+        p.effects = {};
       }
       this.broadcastState();
       clearTimeout(this.phaseTimer);
@@ -202,6 +234,7 @@
       this.phase = 'lobby';
       this.phaseEndsAt = 0;
       this.fruits.clear();
+      this.items.clear();
       this.lastResults = [...this.players.values()]
         .sort((a, b) => b.score - a.score)
         .map((p) => ({ id: p.id, name: p.name, color: p.color, score: p.score }));
@@ -227,13 +260,20 @@
           this.nextSalvoAt = now + CONFIG.salvoEveryMs * rand(0.8, 1.2);
           this.spawnSalvo(now);
         }
+        for (const [id, item] of this.items) {
+          if (item.t0 + fruitLifetime(item) + 500 < now) this.items.delete(id);
+        }
+        if (now >= this.nextItemAt) {
+          this.nextItemAt = now + CONFIG.itemEveryMs * rand(0.7, 1.3);
+          this.spawnItem(now);
+        }
       }
       // Ninja positions go out in every phase except the lobby, which covers the dojo.
       if (this.phase !== 'lobby') {
         this.broadcast({
           type: 'ninjas',
           list: this.connected().filter((p) => p.pos).map((p) => [
-            p.id, p.pos.x, p.pos.y, p.pos.rot, p.pos.air, now < p.stunnedUntil ? 1 : 0, p.pos.facing,
+            p.id, p.pos.x, p.pos.y, p.pos.rot, p.pos.air, now < p.stunnedUntil ? 1 : 0, p.pos.facing, effectBits(p, now),
           ]),
         });
       }
@@ -261,6 +301,63 @@
       this.fruits.set(fruit.id, fruit);
       this.broadcast({ type: 'spawn', fruit });
       return fruit;
+    }
+
+    /**
+     * A power-up bubble rises slowly from the floor, away from the falling fruit.
+     * Same path formula: a negative v0 without gravity moves it up at a steady pace.
+     */
+    spawnItem(now, overrides = {}) {
+      const r = CONFIG.itemRadius;
+      const item = {
+        id: nextFruitId++,
+        kind: pickItemKind(),
+        t0: now,
+        r,
+        rise: true,
+        x0: rand(r + 0.3, CONFIG.width - r - 0.3),
+        y0: -r - 0.2,
+        vx: rand(-0.5, 0.5),
+        v0: -rand(1.6, 2.2),
+        g: 0,
+        rot0: 0,
+        spin: 0,
+        ...overrides,
+      };
+      this.items.set(item.id, item);
+      this.broadcast({ type: 'item', item });
+      return item;
+    }
+
+    /** Is the path point (fruit or item) near the claimed position shortly before now? */
+    nearPath(f, x, y, reach, now) {
+      for (let back = 0; back <= 300; back += 50) {
+        const pos = fruitPosition(f, now - back);
+        if (Math.hypot(pos.x - x, pos.y - y) <= reach) return true;
+      }
+      return false;
+    }
+
+    /** Body or katana touches a power-up bubble. */
+    collect(player, msg) {
+      if (this.phase !== 'playing') return;
+      const item = this.items.get(Number(msg.id));
+      if (!item) return;
+      const now = Date.now();
+      const x = Number(msg.x);
+      const y = Number(msg.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      if (player.pos && Math.hypot(x - player.pos.x, y - player.pos.y) > CONFIG.positionTolerance) return;
+      const bonus = hasEffect(player, 'giant', now) ? CONFIG.giantReach : 0;
+      if (!this.nearPath(item, x, y, CONFIG.bladeReach + bonus + item.r + CONFIG.cutTolerance, now)) return;
+
+      this.items.delete(item.id);
+      const ms = ITEMS[item.kind].ms;
+      player.effects[item.kind] = now + ms;
+      this.broadcast({
+        type: 'collected', id: item.id, kind: item.kind, ms,
+        by: { id: player.id, name: player.name, color: player.color },
+      });
     }
 
     /** A row of fruit across the dojo, falling together. */
@@ -297,30 +394,35 @@
       // The claimed blade position must match the last reported ninja …
       if (player.pos && Math.hypot(x - player.pos.x, y - player.pos.y) > CONFIG.positionTolerance) return;
       // … and the fruit must have been within reach shortly before now (latency).
-      const reach = CONFIG.bladeReach + fruit.r + CONFIG.cutTolerance;
-      let near = false;
-      for (let back = 0; back <= 300 && !near; back += 50) {
-        const pos = fruitPosition(fruit, now - back);
-        near = Math.hypot(pos.x - x, pos.y - y) <= reach;
-      }
-      if (!near) return;
+      const bonus = hasEffect(player, 'giant', now) ? CONFIG.giantReach : 0;
+      if (!this.nearPath(fruit, x, y, CONFIG.bladeReach + bonus + fruit.r + CONFIG.cutTolerance, now)) return;
 
       this.fruits.delete(fruit.id);
       let points = fruit.points;
+      let shielded = false;
       if (fruit.type === 'nest') {
         player.chain = 0;
-        player.stunnedUntil = now + CONFIG.stunMs;
-        player.send({ type: 'stunned', ms: CONFIG.stunMs });
+        if (hasEffect(player, 'shield', now)) {
+          // The shield takes the stings: no points lost, no stun, shield gone.
+          shielded = true;
+          points = 0;
+          player.effects.shield = 0;
+        } else {
+          player.stunnedUntil = now + CONFIG.stunMs;
+          player.send({ type: 'stunned', ms: CONFIG.stunMs });
+        }
       } else {
         player.chain = now - player.lastCutAt <= CONFIG.comboWindowMs ? player.chain + 1 : 1;
         player.lastCutAt = now;
         points += Math.min(CONFIG.maxComboBonus, (player.chain - 1) * CONFIG.comboBonus);
+        if (hasEffect(player, 'double', now)) points *= 2;
       }
       player.score += points;
       this.broadcast({
         type: 'cut',
         id: fruit.id,
         points,
+        shielded,
         chain: player.chain,
         angle: round2(Number(msg.angle) || 0),
         by: { id: player.id, name: player.name, color: player.color },
@@ -342,7 +444,7 @@
       const dx = target.pos.x - player.pos.x;
       const dy = target.pos.y - player.pos.y;
       const dist = Math.hypot(dx, dy);
-      if (dist > CONFIG.bladeReach + CONFIG.ninjaRadius + CONFIG.positionTolerance) return;
+      if (dist > CONFIG.bladeReach + CONFIG.giantReach + CONFIG.ninjaRadius + CONFIG.positionTolerance) return;
       const len = dist || 1;
       const ux = dist ? dx / len : 1;
       const uy = dist ? dy / len : 0;
@@ -357,6 +459,17 @@
         this.broadcast({
           type: 'clash', ...at, a: who(player), b: who(target),
           push: { [player.id]: push(-1), [target.id]: push(1) },
+        });
+        return;
+      }
+
+      if (hasEffect(target, 'shield', now)) {
+        // The shield blocks the kick: the kicker bounces off, the shield is used up.
+        target.effects.shield = 0;
+        this.broadcast({
+          type: 'kick', ...at, by: who(player), target: who(target), points: 0, blocked: true,
+          vx: round2(-ux * CONFIG.bumpSpeed * 0.8),
+          vy: round2(Math.max(0.4, -uy + 0.6) * CONFIG.bumpSpeed * 0.6),
         });
         return;
       }
@@ -393,6 +506,7 @@
       this.lastCutAt = 0;
       this.stunnedUntil = 0;
       this.bumpReadyAt = 0;
+      this.effects = {};        // item kind -> active until (ms)
       this.pos = null;
       this.socket = null;
       this.removeTimer = null;
@@ -444,7 +558,10 @@
       type: 'joined', code, you: player.id, token, color: player.color, name: player.name,
       serverNow: Date.now(), startX,
     });
-    if (room.phase === 'playing') player.send({ type: 'fruits', list: [...room.fruits.values()] });
+    if (room.phase === 'playing') {
+      player.send({ type: 'fruits', list: [...room.fruits.values()] });
+      player.send({ type: 'items', list: [...room.items.values()] });
+    }
     room.broadcast({ type: 'event', kind: 'join', id: player.id, name: player.name, color: player.color });
     room.broadcastState();
     room.startLoop();
@@ -482,6 +599,9 @@
         case 'cut':
           room.cut(player, msg);
           break;
+        case 'collect':
+          room.collect(player, msg);
+          break;
         case 'bump':
           room.bump(player, msg);
           break;
@@ -510,5 +630,5 @@
     });
   }
 
-  return { handleConnection, fruitPosition, fruitLifetime, rooms, CONFIG, FRUITS, PLATFORMS };
+  return { handleConnection, fruitPosition, fruitLifetime, rooms, CONFIG, FRUITS, ITEMS, PLATFORMS };
 });

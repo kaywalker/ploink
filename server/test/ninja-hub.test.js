@@ -8,7 +8,7 @@ const hub = require('../public/shared/ninja-hub');
 
 Object.assign(hub.CONFIG, {
   countdownMs: 50,
-  roundMs: 4000,
+  roundMs: 7000,
   salvoEveryMs: 60_000,
 });
 
@@ -65,6 +65,13 @@ async function main() {
   const landed = hub.fruitPosition(sample, sample.t0 + hub.fruitLifetime(sample));
   assert.ok(Math.abs(landed.y - sample.r) < 1e-6, `lands on the floor (y ${landed.y})`);
   console.log('✓ fruit paths bounce off the walls and land on time');
+
+  // Power-up bubbles rise from the floor and leave at the top.
+  const riser = { t0: 0, r: 0.45, rise: true, x0: 5, y0: -0.65, vx: 0.3, v0: -2, g: 0, rot0: 0, spin: 0 };
+  assert.ok(hub.fruitPosition(riser, 0).y < 0, 'starts in the floor');
+  assert.ok(hub.fruitPosition(riser, 2000).y > hub.fruitPosition(riser, 1000).y, 'keeps rising');
+  assert.ok(hub.fruitPosition(riser, hub.fruitLifetime(riser)).y >= hub.CONFIG.height + 2.9, 'gone at the top when it expires');
+  console.log('✓ power-up bubbles rise from the floor');
 
   const bad = fakeClient('bad');
   bad.send({ type: 'join', code: '7', name: 'X' });
@@ -185,8 +192,68 @@ async function main() {
   assert.equal(b.take((m) => m.type === 'clash' || m.type === 'kick'), null);
   console.log('✓ two spinning katanas clash and bounce both ninjas apart');
 
-  const end = await a.next((m) => m.type === 'roundEnd', 6000);
-  assert.equal(end.results[0].id, ben.id, 'Ben leads with 20 points');
+  // Power-ups: a bubble right next to Anna is collected once.
+  const bubble = (kind, x, y) => room.spawnItem(Date.now(), { kind, x0: x, y0: y, vx: 0, v0: 0, g: 0.0001 });
+  a.send({ type: 'pos', x: 3, y: 2, rot: 0, air: false, facing: 1 });
+  await sleep(20);
+  const dbl = bubble('double', 3.4, 2.3);
+  a.send({ type: 'collect', id: dbl.id, x: 3, y: 2 });
+  const got = await b.next((m) => m.type === 'collected' && m.id === dbl.id);
+  assert.equal(got.kind, 'double');
+  assert.equal(got.by.id, anna.id);
+  assert.ok(anna.effects.double > Date.now());
+  b.send({ type: 'collect', id: dbl.id, x: 4.2, y: 2 });
+  await sleep(30);
+  assert.ok(!ben.effects.double, 'a bubble can only be collected once');
+  console.log('✓ power-up bubbles are collected once');
+
+  const scoreBefore = anna.score;
+  anna.lastCutAt = 0;
+  const f4 = hang(3.6, 2.4);
+  a.send({ type: 'cut', id: f4.id, x: 3, y: 2 });
+  const cut4 = await a.next((m) => m.type === 'cut' && m.id === f4.id);
+  assert.equal(cut4.points, 20, 'apple counts double');
+  assert.equal(anna.score, scoreBefore + 20);
+  console.log('✓ double points');
+
+  const farFruit = hang(6.0, 2);
+  a.send({ type: 'cut', id: farFruit.id, x: 3, y: 2 });
+  await sleep(30);
+  assert.ok(room.fruits.has(farFruit.id), 'out of normal reach');
+  const giant = bubble('giant', 3.3, 2);
+  a.send({ type: 'collect', id: giant.id, x: 3, y: 2 });
+  await a.next((m) => m.type === 'collected' && m.id === giant.id);
+  a.send({ type: 'cut', id: farFruit.id, x: 3, y: 2 });
+  await a.next((m) => m.type === 'cut' && m.id === farFruit.id);
+  console.log('✓ the giant katana reaches further');
+
+  const shield = bubble('shield', 3.3, 2);
+  a.send({ type: 'collect', id: shield.id, x: 3, y: 2 });
+  await a.next((m) => m.type === 'collected' && m.id === shield.id);
+  const annaScore = anna.score;
+  ben.bumpReadyAt = 0;
+  b.send({ type: 'pos', x: 4.2, y: 2, rot: 2, air: true, facing: -1 });
+  await sleep(20);
+  a.drain(); // earlier kick messages are still in Anna's inbox
+  b.send({ type: 'bump', id: anna.id });
+  const blocked = await a.next((m) => m.type === 'kick');
+  assert.equal(blocked.blocked, true);
+  assert.equal(blocked.points, 0);
+  assert.ok(blocked.vx > 0, 'Ben bounces back to the right');
+  assert.equal(anna.score, annaScore);
+  assert.ok(!(anna.effects.shield > Date.now()), 'the shield is used up');
+  anna.effects.shield = Date.now() + 5000;
+  const nest2 = hang(3.5, 1.6, 'nest');
+  a.send({ type: 'cut', id: nest2.id, x: 3, y: 2 });
+  const shieldedCut = await a.next((m) => m.type === 'cut' && m.id === nest2.id);
+  assert.equal(shieldedCut.shielded, true);
+  assert.equal(anna.score, annaScore);
+  assert.equal(a.take((m) => m.type === 'stunned'), null, 'no stun behind the shield');
+  console.log('✓ the shield blocks one kick and one wasp nest');
+
+  const end = await a.next((m) => m.type === 'roundEnd', 9000);
+  assert.equal(end.results.length, 2);
+  assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');
   await a.next((m) => m.type === 'state' && m.phase === 'lobby');
   console.log('✓ round ends with results');
 
