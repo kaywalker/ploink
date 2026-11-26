@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1035">
+  <title>Ploink Sounds</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="ninja sounds-page">
+  <main class="sound-board">
+    <h1>🔊 Sounds der Katana-Küche</h1>
+    <p class="rules-note">Tippe auf einen Knopf, um das Geräusch zu hören. Alle Töne werden live im Browser erzeugt (keine Audiodateien).</p>
+    <p id="muted-note" class="sound-muted" hidden>Der Ton ist auf diesem Gerät im Spiel stummgeschaltet. <button id="unmute" class="btn btn-ghost" type="button">Ton einschalten</button></p>
+
+    <h2>Bewegung</h2>
+    <div class="sound-grid">
+      <button class="btn btn-ghost" type="button" data-sfx="jump">🦘 Sprung</button>
+      <button class="btn btn-ghost" type="button" data-sfx="jump" data-arg="true">🦘 Luftsprung</button>
+      <button class="btn btn-ghost" type="button" data-sfx="slash">🌀 Schwertwirbel</button>
+    </div>
+
+    <h2>Obst</h2>
+    <div class="sound-grid">
+      <button class="btn btn-ghost" type="button" data-sfx="cut">🍉 Zerteilen</button>
+      <button class="btn btn-ghost" type="button" data-sfx="cut" data-arg="0.4">🍉 Zerteilen (andere, leiser)</button>
+      <button class="btn btn-ghost" type="button" data-sfx="combo" data-arg="1">✨ Punkte</button>
+      <button class="btn btn-ghost" type="button" data-sfx="combo-run">✨ Kombo 1 → 6</button>
+      <button class="btn btn-ghost" type="button" data-sfx="splat">💧 Fällt auf den Boden</button>
+      <button class="btn btn-ghost" type="button" data-sfx="buzz">🐝 Wespennest</button>
+    </div>
+
+    <h2>Kampf</h2>
+    <div class="sound-grid">
+      <button class="btn btn-ghost" type="button" data-sfx="kick">💥 Kick (du triffst)</button>
+      <button class="btn btn-ghost" type="button" data-sfx="kicked">💨 Gekickt (du wirst getroffen)</button>
+      <button class="btn btn-ghost" type="button" data-sfx="clash">⚔️ Klirr!</button>
+      <button class="btn btn-ghost" type="button" data-sfx="block">🛡️ Schild blockt</button>
+      <button class="btn btn-ghost" type="button" data-sfx="throw">✦ Shuriken-Wurf</button>
+    </div>
+
+    <h2>Items &amp; Runde</h2>
+    <div class="sound-grid">
+      <button class="btn btn-ghost" type="button" data-sfx="collect">🫧 Blase eingesammelt</button>
+      <button class="btn btn-ghost" type="button" data-sfx="countdown">⏱ Countdown 3-2-1-Los</button>
+      <button class="btn btn-ghost" type="button" data-sfx="fanfare">🏆 Rundenende</button>
+    </div>
+
+    <a href="./" class="btn">Zurück zum Start</a>
+  </main>
+
+  <script src="sfx.js"></script>
+  <script src="sounds.js"></script>
+</body>
+</html>

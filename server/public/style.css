@@ -1067,6 +1067,7 @@ body.brawl { background: #14162b; }
 body.ninja { background: #1b1035; }
 
 .ninja-top .badge { cursor: default; }
+.ninja-top .sound-toggle { pointer-events: auto; cursor: pointer; padding: 6px 9px; }
 .score-chip { min-width: 56px; }
 .score-chip small { font-weight: 700; color: var(--text); }
 .score-chip.me { background: rgba(255, 255, 255, 0.16); }
@@ -1080,3 +1081,21 @@ body.ninja { background: #1b1035; }
 @media (orientation: landscape) {
   .ninja .lobby { align-items: start; }
 }
+
+/* ---------- Sound board (sounds.html) ---------- */
+
+.sounds-page { overflow-y: auto; }
+
+.sound-board {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 20px) 16px calc(var(--safe-bottom) + 24px);
+  display: grid;
+  gap: 12px;
+}
+
+.sound-board h1 { margin: 0; font-size: 22px; }
+.sound-board h2 { margin: 10px 0 0; font-size: 15px; color: var(--muted); }
+.sound-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.sound-grid .btn { margin: 0; font-size: 14px; }
+.sound-muted { margin: 0; font-size: 13px; color: var(--danger); }

@@ -54,6 +54,10 @@
     itemRadius: 0.45,
     giantReach: 1.0,            // extra katana reach with the giant katana
     turboFactor: 1.35,          // jump speed with turbo (applied on the phone)
+    starSpeed: 16,              // shuriken flight speed (units/s), straight line, no gravity
+    starRange: 10,              // a shuriken vanishes after this distance
+    starRadius: 0.3,
+    maxStars: 6,
 
     cutTolerance: 0.9,          // slack for latency when checking a claimed cut
     positionTolerance: 2.5,     // claimed position vs. the last reported one
@@ -90,6 +94,7 @@
     double: { ms: 10_000, bit: 2, weight: 3 },  // ✨ double points
     shield: { ms: 12_000, bit: 4, weight: 2 },  // 🛡️ blocks one kick or wasp nest
     turbo:  { ms: 8_000,  bit: 8, weight: 3 },  // ⚡ stronger jumps
+    shuriken: { ms: 0, bit: 16, weight: 3, stars: 3 }, // ✦ three throwing stars (a count, not a timer)
   };
 
   const COLORS = ['#ff5d73', '#4dd6ff', '#7ee081', '#ffb84d', '#c77dff', '#ffe156'];
@@ -127,7 +132,8 @@
   }
 
   const hasEffect = (p, kind, now) => (p.effects[kind] || 0) > now;
-  const effectBits = (p, now) => Object.entries(ITEMS).reduce((bits, [kind, def]) => bits | (hasEffect(p, kind, now) ? def.bit : 0), 0);
+  const effectBits = (p, now) => Object.entries(ITEMS).reduce(
+    (bits, [kind, def]) => bits | ((kind === 'shuriken' ? p.stars > 0 : hasEffect(p, kind, now)) ? def.bit : 0), 0);
 
   /** Position and rotation of a fruit at hub time `now` (same formula on every phone). */
   function fruitPosition(f, now) {
@@ -156,6 +162,7 @@
       this.players = new Map(); // token -> player
       this.fruits = new Map();
       this.items = new Map();   // power-up bubbles, same path formula as the fruit
+      this.stars = new Map();   // shuriken in flight
       this.nextItemAt = 0;
       this.phase = 'lobby';     // lobby | countdown | playing
       this.phaseEndsAt = 0;
@@ -215,6 +222,7 @@
       this.phaseEndsAt = now + CONFIG.roundMs;
       this.fruits.clear();
       this.items.clear();
+      this.stars.clear();
       this.spawnBudget = 1;
       this.nextSalvoAt = now + CONFIG.salvoEveryMs;
       this.nextItemAt = now + CONFIG.itemEveryMs * 0.6;
@@ -223,6 +231,7 @@
         p.chain = 0;
         p.stunnedUntil = 0;
         p.effects = {};
+        p.stars = 0;
       }
       this.broadcastState();
       clearTimeout(this.phaseTimer);
@@ -235,6 +244,7 @@
       this.phaseEndsAt = 0;
       this.fruits.clear();
       this.items.clear();
+      this.stars.clear();
       this.lastResults = [...this.players.values()]
         .sort((a, b) => b.score - a.score)
         .map((p) => ({ id: p.id, name: p.name, color: p.color, score: p.score }));
@@ -259,6 +269,9 @@
         if (now >= this.nextSalvoAt) {
           this.nextSalvoAt = now + CONFIG.salvoEveryMs * rand(0.8, 1.2);
           this.spawnSalvo(now);
+        }
+        for (const [id, star] of this.stars) {
+          if (now - star.t0 > (CONFIG.starRange / CONFIG.starSpeed) * 1000 + 1500) this.stars.delete(id);
         }
         for (const [id, item] of this.items) {
           if (item.t0 + fruitLifetime(item) + 500 < now) this.items.delete(id);
@@ -352,12 +365,80 @@
       if (!this.nearPath(item, x, y, CONFIG.bladeReach + bonus + item.r + CONFIG.cutTolerance, now)) return;
 
       this.items.delete(item.id);
-      const ms = ITEMS[item.kind].ms;
-      player.effects[item.kind] = now + ms;
+      const def = ITEMS[item.kind];
+      if (item.kind === 'shuriken') player.stars = Math.min(CONFIG.maxStars, player.stars + def.stars);
+      else player.effects[item.kind] = now + def.ms;
       this.broadcast({
-        type: 'collected', id: item.id, kind: item.kind, ms,
+        type: 'collected', id: item.id, kind: item.kind, ms: def.ms, stars: player.stars,
         by: { id: player.id, name: player.name, color: player.color },
       });
+    }
+
+    /** Throw a shuriken from the ninja's position in direction (dx, dy). */
+    throwStar(player, msg) {
+      if (this.phase !== 'playing' || player.stars <= 0 || !player.pos) return;
+      const dx = Number(msg.dx);
+      const dy = Number(msg.dy);
+      const len = Math.hypot(dx, dy);
+      if (!Number.isFinite(len) || len < 1e-6) return;
+      player.stars--;
+      const star = {
+        id: nextFruitId++, by: player.id, x0: player.pos.x, y0: player.pos.y,
+        dx: round2(dx / len), dy: round2(dy / len), t0: Date.now(), hitNinja: false,
+      };
+      this.stars.set(star.id, star);
+      this.broadcast({
+        type: 'star', cid: msg.cid, stars: player.stars,
+        star: { id: star.id, x0: star.x0, y0: star.y0, dx: star.dx, dy: star.dy, t0: star.t0 },
+        by: { id: player.id, name: player.name, color: player.color },
+      });
+    }
+
+    /** Is (x, y) on the flight line of the star (the phone starts it a little earlier)? */
+    onStarLine(star, x, y) {
+      const rx = x - star.x0;
+      const ry = y - star.y0;
+      const along = rx * star.dx + ry * star.dy;
+      const across = Math.abs(rx * star.dy - ry * star.dx);
+      return along >= -1 && along <= CONFIG.starRange + 1 && across <= 0.8;
+    }
+
+    /** A shuriken hits another ninja: deflected by a spinning katana, blocked by a shield, else a kick. */
+    starHit(player, msg) {
+      if (this.phase !== 'playing') return;
+      const star = this.stars.get(Number(msg.star));
+      if (!star || star.by !== player.id || star.hitNinja) return;
+      const x = Number(msg.x);
+      const y = Number(msg.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !this.onStarLine(star, x, y)) return;
+      const target = this.connected().find((p) => p.id === msg.target && p !== player);
+      if (!target || !target.pos) return;
+      if (Math.hypot(target.pos.x - x, target.pos.y - y) > CONFIG.ninjaRadius + CONFIG.starRadius + CONFIG.positionTolerance) return;
+      const now = Date.now();
+      star.hitNinja = true;
+      const who = (p) => ({ id: p.id, name: p.name, color: p.color });
+      const at = { x: round2(x), y: round2(y) };
+      this.broadcast({ type: 'starGone', id: star.id });
+
+      const spinning = target.pos.air && now - target.pos.at <= CONFIG.spinFreshMs && now >= target.stunnedUntil;
+      if (spinning) {
+        this.broadcast({ type: 'deflect', ...at, target: who(target), by: who(player) });
+        return;
+      }
+      if (hasEffect(target, 'shield', now)) {
+        target.effects.shield = 0;
+        this.broadcast({ type: 'kick', ...at, by: who(player), target: who(target), points: 0, blocked: true, via: 'star', vx: 0, vy: 0 });
+        return;
+      }
+      const points = Math.min(CONFIG.kickSteal, Math.max(0, target.score));
+      target.score -= points;
+      player.score += points;
+      this.broadcast({
+        type: 'kick', ...at, by: who(player), target: who(target), points, via: 'star',
+        vx: round2(star.dx * CONFIG.bumpSpeed),
+        vy: round2(Math.max(0.4, star.dy + 0.6) * CONFIG.bumpSpeed * 0.7),
+      });
+      if (points) this.broadcastState();
     }
 
     /** A row of fruit across the dojo, falling together. */
@@ -387,15 +468,24 @@
       const fruit = this.fruits.get(Number(msg.id));
       if (!fruit) return;
       const now = Date.now();
-      if (now < player.stunnedUntil) return;
       const x = Number(msg.x);
       const y = Number(msg.y);
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      // The claimed blade position must match the last reported ninja …
-      if (player.pos && Math.hypot(x - player.pos.x, y - player.pos.y) > CONFIG.positionTolerance) return;
-      // … and the fruit must have been within reach shortly before now (latency).
-      const bonus = hasEffect(player, 'giant', now) ? CONFIG.giantReach : 0;
-      if (!this.nearPath(fruit, x, y, CONFIG.bladeReach + bonus + fruit.r + CONFIG.cutTolerance, now)) return;
+      const viaStar = msg.star !== undefined && msg.star !== null;
+      if (viaStar) {
+        // A shuriken cut: (x, y) is where the star was; it must lie on the star's line and
+        // the fruit must have been there. Stars fly past wasp nests.
+        const star = this.stars.get(Number(msg.star));
+        if (!star || star.by !== player.id || fruit.type === 'nest' || !this.onStarLine(star, x, y)) return;
+        if (!this.nearPath(fruit, x, y, CONFIG.starRadius + fruit.r + CONFIG.cutTolerance, now)) return;
+      } else {
+        if (now < player.stunnedUntil) return;
+        // The claimed blade position must match the last reported ninja …
+        if (player.pos && Math.hypot(x - player.pos.x, y - player.pos.y) > CONFIG.positionTolerance) return;
+        // … and the fruit must have been within reach shortly before now (latency).
+        const bonus = hasEffect(player, 'giant', now) ? CONFIG.giantReach : 0;
+        if (!this.nearPath(fruit, x, y, CONFIG.bladeReach + bonus + fruit.r + CONFIG.cutTolerance, now)) return;
+      }
 
       this.fruits.delete(fruit.id);
       let points = fruit.points;
@@ -507,6 +597,7 @@
       this.stunnedUntil = 0;
       this.bumpReadyAt = 0;
       this.effects = {};        // item kind -> active until (ms)
+      this.stars = 0;           // shuriken left to throw
       this.pos = null;
       this.socket = null;
       this.removeTimer = null;
@@ -601,6 +692,12 @@
           break;
         case 'collect':
           room.collect(player, msg);
+          break;
+        case 'throw':
+          room.throwStar(player, msg);
+          break;
+        case 'starHit':
+          room.starHit(player, msg);
           break;
         case 'bump':
           room.bump(player, msg);

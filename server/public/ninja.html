@@ -22,11 +22,12 @@
         <span class="badge">Raum <strong id="hud-code">--</strong><span class="dot"></span><span id="hud-count">1</span>&nbsp;👤</span>
         <span id="hud-timer" class="badge" hidden>⏱ <strong id="hud-time">1:15</strong></span>
         <span class="badge">⭐ <strong id="hud-score">0</strong></span>
+        <button id="sound" class="badge sound-toggle" type="button" aria-label="Ton ausschalten">🔊</button>
       </div>
       <div id="team" class="team"></div>
     </header>
 
-    <p id="gesture-hint" class="gesture-hint">Wischen = springen · nochmal wischen = Mehrfachsprung · Tippen = Schwertwirbel</p>
+    <p id="gesture-hint" class="gesture-hint">Wischen = springen · nochmal wischen = Mehrfachsprung · Tippen = Schwertwirbel · Doppeltippen = Shuriken</p>
     <div id="toasts" class="toasts" aria-live="polite"></div>
 
     <div id="lobby" class="lobby">
@@ -42,7 +43,8 @@
             <tr><td>🌀 Im Sprung</td><td>Der Ninja rollt, das Katana schneidet alles in Reichweite</td></tr>
             <tr><td>👉 Tippen</td><td>Schwertwirbel auf dem Boden</td></tr>
             <tr><td>💨 Kick</td><td>Triff einen anderen Ninja mit dem Katana: er fliegt weg und du klaust ihm 10 Punkte</td></tr>
-            <tr><td>🫧 Blasen</td><td>Steigen vom Boden auf – berühren und einsammeln: 🗡️ Riesen-Katana · ×2 doppelte Punkte · 🛡️ Schild gegen einen Kick oder Wespen · ⚡ Turbo-Sprünge</td></tr>
+            <tr><td>🫧 Blasen</td><td>Steigen vom Boden auf – berühren und einsammeln: 🗡️ Riesen-Katana · ×2 doppelte Punkte · 🛡️ Schild gegen einen Kick oder Wespen · ⚡ Turbo-Sprünge · ✦ 3 Shuriken</td></tr>
+            <tr><td>✦ Doppeltippen</td><td>Shuriken werfen – er fliegt dahin, wo du tippst, schneidet Obst und kickt Ninjas weg</td></tr>
             <tr><td>⚔️ Klirr!</td><td>Drehen sich beide Katanas, prallen sie ab – wer angegriffen wird, springt selbst los</td></tr>
           </table>
           <p class="rules-note">Schnell hintereinander schneiden gibt Kombo-Bonus. Am besten hochkant spielen.</p>
@@ -66,6 +68,7 @@
 
   <script src="shared/ninja-hub.js"></script>
   <script src="shared/net.js"></script>
+  <script src="sfx.js"></script>
   <script src="ninja.js"></script>
 </body>
 </html>

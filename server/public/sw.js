@@ -4,10 +4,10 @@
 // The site loads instantly on later visits (playing still needs the PeerJS broker).
 // The game server's health check and WebSockets are never cached.
 
-const CACHE = 'ploink-v6';
+const CACHE = 'ploink-v7';
 const ASSETS = [
   './', 'index.html', 'shooter.html', 'gallery.html', 'control.html', 'brawl.html', 'ninja.html', 'style.css', 'favicon.svg',
-  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js',
+  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js', 'sfx.js', 'sounds.html', 'sounds.js',
   'shared/net.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js', 'shared/ninja-hub.js',
   'vendor/peerjs-1.5.5.min.js',
 ];

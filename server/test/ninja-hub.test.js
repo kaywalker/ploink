@@ -8,7 +8,7 @@ const hub = require('../public/shared/ninja-hub');
 
 Object.assign(hub.CONFIG, {
   countdownMs: 50,
-  roundMs: 7000,
+  roundMs: 9000,
   salvoEveryMs: 60_000,
 });
 
@@ -251,7 +251,53 @@ async function main() {
   assert.equal(a.take((m) => m.type === 'stunned'), null, 'no stun behind the shield');
   console.log('✓ the shield blocks one kick and one wasp nest');
 
-  const end = await a.next((m) => m.type === 'roundEnd', 9000);
+  // Shuriken: a bubble gives three stars; a throw flies along a straight line.
+  const sh = bubble('shuriken', 3.3, 2);
+  a.send({ type: 'collect', id: sh.id, x: 3, y: 2 });
+  const gotStars = await a.next((m) => m.type === 'collected' && m.id === sh.id);
+  assert.equal(gotStars.stars, 3);
+  a.send({ type: 'throw', dx: 1, dy: 0, cid: 7 });
+  const thrown = await b.next((m) => m.type === 'star');
+  assert.equal(thrown.cid, 7);
+  assert.equal(thrown.stars, 2);
+  assert.equal(anna.stars, 2);
+  const starId = thrown.star.id;
+
+  const onLine = hang(7, 2);
+  const offLine = hang(7, 5);
+  const nestOnLine = hang(6, 2, 'nest');
+  a.send({ type: 'cut', id: offLine.id, star: starId, x: 7, y: 5 });
+  a.send({ type: 'cut', id: nestOnLine.id, star: starId, x: 6, y: 2 });
+  a.send({ type: 'cut', id: onLine.id, star: starId, x: 7, y: 2 });
+  await a.next((m) => m.type === 'cut' && m.id === onLine.id);
+  assert.ok(room.fruits.has(offLine.id), 'a star only cuts along its line');
+  assert.ok(room.fruits.has(nestOnLine.id), 'stars fly past wasp nests');
+  console.log('✓ a shuriken cuts fruit far away along its flight line');
+
+  b.send({ type: 'pos', x: 8.6, y: 2, rot: 0, air: false, facing: -1 });
+  ben.score = 20;
+  ben.effects = {};
+  await sleep(20);
+  a.drain();
+  a.send({ type: 'starHit', star: starId, target: ben.id, x: 8.3, y: 2 });
+  const starKick = await a.next((m) => m.type === 'kick');
+  assert.equal(starKick.via, 'star');
+  assert.equal(starKick.points, hub.CONFIG.kickSteal);
+  assert.ok(starKick.vx > 0, 'knocked along the flight direction');
+  assert.equal(ben.score, 20 - hub.CONFIG.kickSteal);
+  a.send({ type: 'starHit', star: starId, target: ben.id, x: 8.3, y: 2 });
+  await sleep(30);
+  assert.equal(ben.score, 20 - hub.CONFIG.kickSteal, 'a star hits only one ninja');
+  console.log('✓ a shuriken knocks another ninja away and steals points');
+
+  anna.stars = 0;
+  b.drain();
+  a.send({ type: 'throw', dx: 1, dy: 0, cid: 8 });
+  await sleep(30);
+  assert.equal(b.take((m) => m.type === 'star'), null, 'no stars, no throw');
+  console.log('✓ no throw without shuriken');
+
+  const end = await a.next((m) => m.type === 'roundEnd', 11000);
   assert.equal(end.results.length, 2);
   assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');
   await a.next((m) => m.type === 'state' && m.phase === 'lobby');

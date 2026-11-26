@@ -8,6 +8,7 @@
 
 (() => {
   const HUB = window.PloinkNinjaHub;
+  const SFX = window.PloinkSfx;
   const CFG = HUB.CONFIG;
   const W = CFG.width;
   const H = CFG.height;
@@ -28,12 +29,14 @@
     double: { icon: '×2', label: 'Doppelte Punkte', rim: '#ffd23f' },
     shield: { icon: '🛡️', label: 'Schild', rim: '#4dd6ff' },
     turbo:  { icon: '⚡', label: 'Turbo', rim: '#ffe156' },
+    shuriken: { icon: '✦', label: 'Shuriken', rim: '#c9d3ff' },
   };
   const BIT = Object.fromEntries(Object.entries(HUB.ITEMS).map(([kind, def]) => [kind, def.bit]));
   const RECONNECT_DELAY_MS = 1200;
   const STEP = 1 / 120;
   const TRAIL_MS = 320;             // how long the light trail of a katana tip lasts
-  const TUMBLE_MS = 450;            // a kicked ninja cannot cut or kick back for this long
+  const TUMBLE_MS = 450;
+  const DOUBLE_TAP_MS = 320;            // a kicked ninja cannot cut or kick back for this long
   const NINJA_SCALE = 1.2;         // drawn a bit larger than its hit box for small screens
 
   const FLESH = {
@@ -97,6 +100,11 @@
   const popups = [];
   const items = new Map();          // id -> power-up bubble (same path formula as fruit)
   const myEffects = {};             // item kind -> active until (performance.now)
+  let myStars = 0;                  // shuriken left to throw
+  let nextStarCid = 1;
+  const ownStars = [];              // own shuriken in flight, simulated here (no round trip)
+  const otherStars = new Map();     // server id -> shuriken of other ninjas (hub clock)
+  let lastTap = { t: 0 };           // for the double tap
   const trails = new Map();         // id -> recent positions [{x, y, t}] for the light trail
   const bumpCooldown = new Map();   // id -> time when the own katana may knock them again
 
@@ -204,15 +212,31 @@
       case 'collected':
         handleCollected(msg);
         break;
+      case 'star':
+        handleStar(msg);
+        break;
+      case 'starGone': {
+        otherStars.delete(msg.id);
+        const own = ownStars.findIndex((st) => st.id === msg.id);
+        if (own >= 0) ownStars.splice(own, 1);
+        break;
+      }
+      case 'deflect':
+        sparks(msg.x, msg.y, '#ffe156', 14);
+        popups.push({ x: msg.x, y: msg.y + 1, life: 1, text: 'Klirr!', color: '#ffe156' });
+        SFX.clash();
+        if (msg.target.id === me.id) shout('⚔️ Abgewehrt!', '#ffe156');
+        break;
       case 'ninjas':
         receiveNinjas(msg.list);
         break;
       case 'kick':
         if (msg.blocked) {
-          // The target's shield took the hit: the kicker bounces off.
+          // The target's shield took the hit: the kicker bounces off (not a far-away thrower).
           sparks(msg.x, msg.y, '#4dd6ff', 14);
+          SFX.block();
           if (msg.by.id === me.id) {
-            knock(msg.vx, msg.vy, false);
+            if (msg.via !== 'star') knock(msg.vx, msg.vy, false);
             shout('🛡️ Abgeprallt!', '#4dd6ff');
           } else if (msg.target.id === me.id) {
             myEffects.shield = 0;
@@ -222,15 +246,18 @@
         }
         sparks(msg.x, msg.y, '#ffffff', 10);
         if (msg.target.id === me.id) {
+          SFX.kicked();
           knock(msg.vx, msg.vy, true);
           shout(`💨 ${msg.by.name}${msg.points ? ` −${msg.points}` : ''}`, msg.by.color);
           vibrate([40, 30, 40]);
         } else if (msg.by.id === me.id) {
-          popups.push({ x: msg.x, y: msg.y + 1.7, life: 1.1, text: `Kick!${msg.points ? ` +${msg.points}` : ''}`, color: me.color });
+          SFX.kick();
+          popups.push({ x: msg.x, y: msg.y + 1.7, life: 1.1, text: `${msg.via === 'star' ? 'Treffer!' : 'Kick!'}${msg.points ? ` +${msg.points}` : ''}`, color: me.color });
           vibrate(20);
         }
         break;
       case 'clash': {
+        SFX.clash();
         sparks(msg.x, msg.y, '#ffe156', 18);
         sparks(msg.x, msg.y, '#ffffff', 8);
         popups.push({ x: msg.x, y: msg.y + 1.7, life: 1, text: 'Klirr!', color: '#ffe156' });
@@ -242,11 +269,13 @@
         break;
       }
       case 'stunned':
+        SFX.buzz();
         ninja.stunnedUntil = performance.now() + msg.ms;
         shout('🐝 Autsch!', '#ffb84d');
         vibrate([120, 60, 120]);
         break;
       case 'roundEnd':
+        SFX.fanfare();
         if (msg.results.length > 0) {
           const winner = msg.results[0];
           toast(winner.id === me.id ? '🏆 Du hast gewonnen!' : `🏆 ${winner.name} gewinnt mit ${winner.score} Punkten`, winner.color);
@@ -278,12 +307,18 @@
       items.clear();
     }
     if (msg.phase === 'countdown' && previous !== 'countdown') placeAtStart(startX);
-    if (msg.phase !== 'playing') for (const kind of Object.keys(myEffects)) myEffects[kind] = 0;
+    if (msg.phase !== 'playing') {
+      for (const kind of Object.keys(myEffects)) myEffects[kind] = 0;
+      myStars = 0;
+      ownStars.length = 0;
+      otherStars.clear();
+    }
 
     if (msg.phase === 'lobby') {
       clearTimeout(hintTimer);
       hint.classList.remove('faded');
     } else if (msg.phase === 'playing' && previous !== 'playing') {
+      SFX.go();
       clearTimeout(hintTimer);
       hintTimer = setTimeout(() => hint.classList.add('faded'), 8000);
     }
@@ -356,6 +391,7 @@
     len = Math.hypot(dx, dy);
     dx /= len;
     dy /= len;
+    SFX.jump(ninja.air);
     // Air jumps are unlimited; a little puff under the feet shows each one.
     puff(ninja.x, ninja.y - FOOT);
     const speed = CFG.jumpSpeed * (effectOn('turbo') ? CFG.turboFactor : 1);
@@ -383,6 +419,7 @@
     const now = performance.now();
     if (ninja.air || now < ninja.stunnedUntil || now < ninja.slashUntil) return;
     ninja.slashUntil = now + CFG.slashMs;
+    SFX.slash();
     ninja.spinDir = ninja.facing;
     vibrate(6);
   }
@@ -456,6 +493,8 @@
       const angle = Math.atan2(dy, dx);
       fruits.delete(f.id);
       sliceFruit(f, pos, angle);
+      if (f.type === 'nest') SFX.buzz();
+      else SFX.cut(1);
       sendPos(now, true);
       send({ type: 'cut', id: f.id, x: round2(ninja.x), y: round2(ninja.y), angle: round2(angle) });
       vibrate(f.type === 'nest' ? 0 : 12);
@@ -504,8 +543,14 @@
     }
     const look = ITEM_LOOK[msg.kind];
     if (msg.by.id === me.id) {
-      myEffects[msg.kind] = performance.now() + msg.ms;
-      shout(`${look.icon} ${look.label}!`, look.rim);
+      if (msg.kind === 'shuriken') {
+        myStars = msg.stars;
+        shout(`${look.icon} ${myStars} Shuriken – doppelt tippen!`, look.rim);
+      } else {
+        myEffects[msg.kind] = performance.now() + msg.ms;
+        shout(`${look.icon} ${look.label}!`, look.rim);
+      }
+      SFX.collect();
       vibrate([20, 30, 20]);
     } else if (pos) {
       popups.push({ x: pos.x, y: pos.y + 0.5, life: 1, text: `${msg.by.name}: ${look.icon}`, color: msg.by.color });
@@ -515,6 +560,133 @@
   function popBubble(it, pos) {
     sparks(pos.x, pos.y, ITEM_LOOK[it.kind].rim, 12);
     sparks(pos.x, pos.y, '#ffffff', 6);
+  }
+
+  // --- Shuriken ---------------------------------------------------------------
+  /** Throw a shuriken towards world direction (dx, dy). */
+  function throwStar(dx, dy) {
+    const now = performance.now();
+    if (!state || state.phase !== 'playing' || myStars <= 0 || now < ninja.stunnedUntil) return;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    myStars--;
+    const cid = nextStarCid++;
+    ownStars.push({ cid, id: null, x0: ninja.x, y0: ninja.y, dx, dy, t0: now, cut: new Set(), pending: [], spin: Math.random() * 6 });
+    sendPos(now, true);
+    send({ type: 'throw', dx: round2(dx), dy: round2(dy), cid });
+    SFX.throw();
+    vibrate(10);
+  }
+
+  /** Throw towards a point on the screen (the second tap of a double tap). */
+  function throwAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const wx = (clientX - rect.left - ox) / S;
+    const wy = (gy - (clientY - rect.top)) / S;
+    let dx = wx - ninja.x;
+    let dy = wy - ninja.y;
+    if (Math.hypot(dx, dy) < 0.6) { // tapped on the ninja: straight ahead
+      dx = ninja.facing;
+      dy = 0;
+    }
+    throwStar(dx, dy);
+  }
+
+  function handleStar(msg) {
+    if (msg.by.id === me.id) {
+      myStars = msg.stars;
+      const own = ownStars.find((st) => st.cid === msg.cid);
+      if (!own) return;
+      own.id = msg.star.id;
+      for (const claim of own.pending) send({ ...claim, star: own.id });
+      own.pending.length = 0;
+    } else {
+      otherStars.set(msg.star.id, { ...msg.star, color: msg.by.color, spin: Math.random() * 6 });
+    }
+  }
+
+  function starPos(st, now) {
+    const own = st.cid !== undefined;
+    const age = own ? (now - st.t0) / 1000 : (serverNow() - st.t0) / 1000;
+    const d = Math.max(0, age) * CFG.starSpeed;
+    return { x: st.x0 + st.dx * d, y: st.y0 + st.dy * d, d };
+  }
+
+  /** Claims for the own stars wait until the hub has told us their id. */
+  function claimForStar(st, claim) {
+    if (st.id === null) st.pending.push(claim);
+    else send({ ...claim, star: st.id });
+  }
+
+  /** Own shuriken: cut fruit on their way and knock other ninjas away. */
+  function updateOwnStars(now, list) {
+    const t = serverNow();
+    for (let i = ownStars.length - 1; i >= 0; i--) {
+      const st = ownStars[i];
+      const pos = starPos(st, now);
+      if (pos.d > CFG.starRange || pos.x < -1 || pos.x > W + 1 || pos.y < -0.5 || pos.y > H + 3) {
+        ownStars.splice(i, 1);
+        continue;
+      }
+      if (state && state.phase === 'playing') {
+        for (const f of fruits.values()) {
+          if (f.type === 'nest' || st.cut.has(f.id)) continue;
+          const fp = HUB.fruitPosition(f, t);
+          if (Math.hypot(fp.x - pos.x, fp.y - pos.y) > CFG.starRadius + f.r) continue;
+          st.cut.add(f.id);
+          fruits.delete(f.id);
+          const angle = Math.atan2(st.dy, st.dx);
+          sliceFruit(f, fp, angle);
+          SFX.cut(1);
+          claimForStar(st, { type: 'cut', id: f.id, x: round2(pos.x), y: round2(pos.y), angle: round2(angle) });
+        }
+        const hit = list.find((o) => Math.hypot(o.x - pos.x, o.y - pos.y) <= CFG.starRadius + CFG.ninjaRadius);
+        if (hit) {
+          claimForStar(st, { type: 'starHit', target: hit.id, x: round2(pos.x), y: round2(pos.y) });
+          ownStars.splice(i, 1);
+        }
+      }
+    }
+    for (const [id, st] of otherStars) {
+      if (starPos(st, now).d > CFG.starRange + 1) otherStars.delete(id);
+    }
+  }
+
+  function drawStar(x, y, spin, color) {
+    ctx.save();
+    ctx.translate(sx(x), sy(y));
+    ctx.scale(S, S);
+    ctx.rotate(spin);
+    ctx.fillStyle = '#c9d3ff';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.04;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const r = i % 2 ? 0.1 : 0.32;
+      const a = (i / 8) * Math.PI * 2;
+      if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#1b1d2e';
+    ctx.beginPath();
+    ctx.arc(0, 0, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawStars(now) {
+    for (const st of ownStars) {
+      const p = starPos(st, now);
+      drawStar(p.x, p.y, st.spin + p.d * 2.2, me.color);
+    }
+    for (const st of otherStars.values()) {
+      const p = starPos(st, now);
+      drawStar(p.x, p.y, st.spin + p.d * 2.2, st.color);
+    }
   }
 
   function handleCut(msg) {
@@ -529,6 +701,8 @@
     const label = msg.shielded ? '🛡️ geschützt'
       : `${msg.points > 0 ? '+' : '−'}${Math.abs(msg.points)}${msg.chain > 1 ? ` · ${msg.chain}er-Kombo` : ''}`;
     const mine = msg.by.id === me.id;
+    if (mine) SFX.combo(msg.chain);
+    else if (f) SFX.cut(0.4);
     const at = pos || (mine ? { x: ninja.x, y: ninja.y + 1 } : null);
     if (at) {
       popups.push({
@@ -595,6 +769,7 @@
         fruits.delete(f.id);
         const pos = HUB.fruitPosition(f, t);
         splats.push({ x: pos.x, r: f.r, color: f.type === 'nest' ? '#8b6440' : FLESH[f.type], life: 1 });
+        SFX.splat();
         sparks(pos.x, f.r * 0.5, FLESH[f.type], 6);
       }
     }
@@ -657,8 +832,19 @@
     if (!f) return;
     fingers.delete(e.pointerId);
     const moved = Math.hypot(e.clientX - f.sx, e.clientY - f.sy);
-    if (!f.fired && moved < TAP_PX && performance.now() - f.t < TAP_MAX_MS) slash();
-    else if (!f.fired && moved >= TAP_PX) jump(e.clientX - f.sx, -(e.clientY - f.sy));
+    const now = performance.now();
+    if (!f.fired && moved < TAP_PX && now - f.t < TAP_MAX_MS) {
+      // Double tap with shuriken in the pocket: throw one towards the second tap.
+      if (myStars > 0 && now - lastTap.t < DOUBLE_TAP_MS) {
+        throwAt(e.clientX, e.clientY);
+        lastTap = { t: 0 };
+        return;
+      }
+      lastTap = { t: now };
+      slash();
+    } else if (!f.fired && moved >= TAP_PX) {
+      jump(e.clientX - f.sx, -(e.clientY - f.sy));
+    }
   }
   area.addEventListener('pointerup', endFinger);
   area.addEventListener('pointercancel', (e) => fingers.delete(e.pointerId));
@@ -672,6 +858,7 @@
     };
     if (keys[e.key]) jump(...keys[e.key]);
     else if (e.key === ' ') slash();
+    else if (e.key === 'f') throwStar(ninja.facing, 0.15);
     else return;
     e.preventDefault();
   });
@@ -737,7 +924,10 @@
       if ($('hud-time').textContent !== text) $('hud-time').textContent = text;
     } else if (state.phase === 'countdown') {
       const left = String(Math.max(1, Math.ceil((state.phaseEndsAt - now) / 1000)));
-      if (countdownEl.textContent !== left) countdownEl.textContent = left;
+      if (countdownEl.textContent !== left) {
+        countdownEl.textContent = left;
+        SFX.beep();
+      }
     }
   }
 
@@ -1288,11 +1478,13 @@
     ctx.fillText(label, px, py - S * 1.15);
     // The own active power-ups with the seconds left
     if (opts.isMe) {
-      const active = Object.keys(ITEM_LOOK).filter((kind) => effectOn(kind, now));
+      const active = Object.keys(ITEM_LOOK).filter((kind) => (kind === 'shuriken' ? myStars > 0 : effectOn(kind, now)));
       if (active.length) {
         ctx.font = `700 ${Math.max(10, Math.round(S * 0.3))}px system-ui, sans-serif`;
         ctx.fillStyle = '#ffffff';
-        const text = active.map((kind) => `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`).join('   ');
+        const text = active.map((kind) => (kind === 'shuriken'
+          ? `✦ ${myStars}`
+          : `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`)).join('   ');
         ctx.fillText(text, px, py - S * 1.55);
       }
     }
@@ -1324,6 +1516,12 @@
     ctx.textBaseline = 'middle';
     ctx.font = `800 ${Math.round(r * 1.05)}px system-ui, sans-serif`;
     ctx.fillStyle = look.rim;
+    if (it.kind === 'shuriken') {
+      ctx.restore();
+      ctx.textBaseline = 'alphabetic';
+      drawStar(pos.x, pos.y + Math.sin(t * 3 + it.id) * 0.04, t * 3, look.rim);
+      return;
+    }
     ctx.fillText(look.icon, px, py + r * 0.05);
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
@@ -1447,7 +1645,9 @@
       ctx.fillStyle = p.color;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
       ctx.shadowBlur = 4;
-      ctx.fillText(p.text, sx(p.x), sy(p.y));
+      // Keep the whole text on screen, also for a ninja at the wall.
+      const half = ctx.measureText(p.text).width / 2 + 6;
+      ctx.fillText(p.text, Math.min(cssW - half, Math.max(half, sx(p.x))), sy(p.y));
     }
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
@@ -1498,6 +1698,7 @@
       const stun = now < ninja.stunnedUntil;
       drawNinja({ ...ninja, stun }, me.color, '▼ du', now, { isMe: true, spinning: bladeActive(now), eff: myBits(now) });
     }
+    drawStars(now);
     drawEffects();
   }
 
@@ -1535,6 +1736,7 @@
     checkCollect(now);
     const list = otherNinjas(now);
     checkBumps(now, list);
+    updateOwnStars(now, list);
 
     if (now - lastPosSent >= POS_INTERVAL_MS) sendPos(now, false);
 
@@ -1548,6 +1750,18 @@
   $('hud-code').textContent = roomCode;
   $('lobby-code').textContent = roomCode;
   $('start').addEventListener('click', () => send({ type: 'start' }));
+
+  // Sound on/off, remembered per device.
+  const soundBtn = $('sound');
+  const renderSound = () => {
+    soundBtn.textContent = SFX.muted ? '🔇' : '🔊';
+    soundBtn.setAttribute('aria-label', SFX.muted ? 'Ton einschalten' : 'Ton ausschalten');
+  };
+  soundBtn.addEventListener('click', () => {
+    SFX.setMuted(!SFX.muted);
+    renderSound();
+  });
+  renderSound();
 
   resize();
   connect();
