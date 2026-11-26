@@ -236,6 +236,37 @@ window.PloinkSfx = (() => {
     hiss({ from: 2500 + Math.random() * 2000, q: 3, at, attack: 0.001, decay: 0.02, peak: level * 0.8, wet: 0.3 });
   }
 
+  /** A tiny high metal tink, placed left or right (`pan` -1 … 1). */
+  function tink(at, level, freq, pan = 0) {
+    const t = ctx.currentTime + at;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(level, t + 0.001);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    let tail = out;
+    if (ctx.createStereoPanner) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = pan;
+      out.connect(panner);
+      tail = panner;
+    }
+    tail.connect(master);
+    const send = ctx.createGain();
+    send.gain.value = 0.4;
+    tail.connect(send);
+    send.connect(reverb);
+    for (const [ratio, amount] of [[1, 1], [2.76, 0.5], [5.4, 0.25]]) {
+      const osc = ctx.createOscillator();
+      osc.frequency.value = freq * ratio;
+      const g = ctx.createGain();
+      g.gain.value = amount;
+      osc.connect(g);
+      g.connect(out);
+      osc.start(t);
+      osc.stop(t + 0.14);
+    }
+  }
+
   let distortion = null;
   /** Soft-clipping curve for the clash impact (built once). */
   function distortionCurve() {
@@ -532,6 +563,12 @@ window.PloinkSfx = (() => {
       band.connect(drive);
       drive.connect(envelope(t, 0.55, 0.001, 0.09, 0.4));
       metal(hit, 0.7, 1, 0.55); // the big sheet-metal clang
+      metal(hit + 0.004, 0.45, 0.4, 0.35); // and a small, bright one on top: "klirr"
+      // Jingling cascade: tiny high tinks like shards or chain links, thinning out
+      for (let i = 0; i < 16; i++) {
+        const k = i / 16;
+        tink(hit + 0.01 + k * k * 0.5 + Math.random() * 0.03, 0.2 * (1 - k * 0.7), 3000 + Math.random() * 5000, Math.random() * 1.6 - 0.8);
+      }
       crack.start(t, Math.random() * 0.5);
       crack.stop(t + 0.15);
       tone({ from: 120 * p, to: 42 * p, at: hit, attack: 0.002, decay: 0.5, peak: 0.6, wet: 0.3 });
