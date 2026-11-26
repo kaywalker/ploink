@@ -100,6 +100,7 @@
   // State
   // ---------------------------------------------------------------------------
   let socket = null;
+  let leaving = false;               // the player left on purpose: no reconnect
   let reconnectTimer = null;
   let hintTimer = null;
   let me = { id: null, name: storage.get(localStorage, 'ploink-name') || '', color: '#ffe156' };
@@ -167,7 +168,7 @@
       handleMessage(msg);
     });
     ws.addEventListener('close', () => {
-      if (socket !== ws) return;
+      if (socket !== ws || leaving) return;
       socket = null;
       offlineEl.hidden = false;
       reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
@@ -2073,6 +2074,27 @@
     renderSound();
   });
   renderSound();
+
+  // Leaving: sign off at the hub so the ninja disappears at once, then back to the start.
+  const leaveConfirm = $('leave-confirm');
+  function leaveGame() {
+    leaving = true;
+    clearTimeout(reconnectTimer);
+    send({ type: 'leave' });
+    SFX.music.stop();
+    setTimeout(() => { location.href = './'; }, 150); // let the message go out first
+  }
+  $('leave').addEventListener('click', () => {
+    // Mid-round ask first (the round's points are lost); in the lobby just go.
+    if (state && state.phase !== 'lobby') leaveConfirm.hidden = false;
+    else leaveGame();
+  });
+  $('leave-yes').addEventListener('click', leaveGame);
+  $('leave-no').addEventListener('click', () => { leaveConfirm.hidden = true; });
+  $('lobby-leave').addEventListener('click', (e) => {
+    e.preventDefault();
+    leaveGame();
+  });
 
   // Full screen (hidden where the browser cannot do it, e.g. iPhone Safari).
   const fsBtn = $('fs');

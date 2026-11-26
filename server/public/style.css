@@ -1084,6 +1084,16 @@ body.ninja { background: #1b1035; }
 }
 
 .hud-best { font-size: 11px; font-weight: 700; color: var(--muted); }
+.leave-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 6, 20, 0.6);
+}
+.leave-card { max-width: 320px; }
 .ninja-top .badge.bump { animation: score-bump .3s ease; }
 @keyframes score-bump { 40% { transform: scale(1.18); border-color: #ffd23f; } }
 .leaderboard-list li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

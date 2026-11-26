@@ -29,6 +29,7 @@
         <button id="sound" class="badge sound-toggle" type="button" aria-label="Ton ausschalten">🔊</button>
         <button id="music" class="badge sound-toggle" type="button" aria-label="Musik ausschalten">🎵</button>
         <button id="fs" class="badge sound-toggle" type="button" aria-label="Vollbild">⛶</button>
+        <button id="leave" class="badge sound-toggle" type="button" aria-label="Spiel verlassen">✕</button>
       </div>
       <div id="team" class="team"></div>
     </header>
@@ -67,12 +68,21 @@
         <div class="lobby-actions">
           <ol id="crew" class="seat-list"></ol>
           <button id="start" class="btn" type="button">Runde starten</button>
-          <a href="./" class="btn btn-ghost">Raum verlassen</a>
+          <a id="lobby-leave" href="./" class="btn btn-ghost">Raum verlassen</a>
         </div>
       </div>
     </div>
 
     <div id="countdown" class="countdown" hidden></div>
+
+    <div id="leave-confirm" class="leave-confirm" hidden>
+      <div class="lobby-card leave-card" role="dialog" aria-modal="true" aria-labelledby="leave-title">
+        <h2 id="leave-title" class="lobby-title">Spiel verlassen?</h2>
+        <p class="rules-note">Dein Ninja verschwindet aus dem Dojo, deine Punkte dieser Runde verfallen.</p>
+        <button id="leave-yes" class="btn" type="button">Verlassen</button>
+        <button id="leave-no" class="btn btn-ghost" type="button">Weiterspielen</button>
+      </div>
+    </div>
     <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
   </section>
 

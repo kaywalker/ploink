@@ -757,6 +757,14 @@
         case 'lava':
           room.burn(player);
           break;
+        case 'leave':
+          // Left on purpose: gone at once, no grace period for a reconnect.
+          clearTimeout(player.removeTimer);
+          room.players.delete(player.token);
+          session = null;
+          room.broadcastState();
+          room.removeIfEmpty();
+          break;
         case 'best':
           // The phone's stored personal best for this name (sent on joining).
           player.best = Math.round(clamp(msg.score, 0, 1_000_000));

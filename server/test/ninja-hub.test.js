@@ -353,6 +353,20 @@ async function main() {
   assert.ok(Object.values(kinds).every((n) => n === 2), JSON.stringify(kinds));
   console.log('✓ every power-up kind comes regularly (shuffled bag)');
 
+  // A third ninja joins and leaves on purpose: gone at once, not after the grace period.
+  const c = fakeClient('Cleo');
+  c.send({ type: 'join', code: '44', name: 'Cleo', token: 'cleo-token-1' });
+  await c.next((m) => m.type === 'joined');
+  assert.equal(room.players.size, 3);
+  a.drain();
+  c.send({ type: 'leave' });
+  const afterLeave = await a.next((m) => m.type === 'state' && m.players.length === 2);
+  assert.ok(!afterLeave.players.some((p) => p.name === 'Cleo'));
+  c.socket.close(); // the page goes away afterwards; that must not bring her back
+  await sleep(20);
+  assert.equal(room.players.size, 2);
+  console.log('✓ leaving removes the ninja at once');
+
   const end = await a.next((m) => m.type === 'roundEnd', 11000);
   assert.equal(end.results.length, 2);
   assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');
