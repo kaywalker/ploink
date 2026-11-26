@@ -197,6 +197,19 @@ window.PloinkSfx = (() => {
     banana: 'soft', eggplant: 'soft',
   };
 
+  let distortion = null;
+  /** Soft-clipping curve for the clash impact (built once). */
+  function distortionCurve() {
+    if (distortion) return distortion;
+    const n = 1024;
+    distortion = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      distortion[i] = ((1 + 40) * x) / (1 + 40 * Math.abs(x));
+    }
+    return distortion;
+  }
+
   /** Struck glass bell: hard attack, bright inharmonic partials, a click, little room. */
   function pling(freq, at = 0, level = 1, decay = 0.28, light = false) {
     tone({ from: freq, at, attack: 0.001, decay, peak: 0.24 * level, wet: 0.12 });
@@ -447,24 +460,83 @@ window.PloinkSfx = (() => {
       tone({ type: 'triangle', from: note(8), to: note(1), at: 0.04, attack: 0.005, decay: 0.35, peak: 0.12, wet: 0.4 });
     },
     /**
-     * Two katanas meet: a heavy sword "tsching!". A dull, weighty impact, the blades
-     * scraping along each other, then a dark ring of steel (pairs of slightly detuned
-     * partials beat against each other), with only a little bright edge on top.
+     * Two katanas meet, cinema style, in five layers: both blades swooshing in, a hard
+     * distorted impact over a deep boom, a long steel ring spread across the stereo
+     * field and bending down, crackling sparks, and an echo through the hall.
      */
     clash() {
       if (!ready()) return;
       const p = vary(0.04);
-      // The impact: weight first, then a short metallic bite
-      tone({ from: 170 * p, to: 75 * p, attack: 0.002, decay: 0.18, peak: 0.45, wet: 0.2 });
-      hiss({ filter: 'lowpass', from: 1100 * p, attack: 0.001, decay: 0.06, peak: 0.4, wet: 0.2 });
-      hiss({ from: 2200 * p, q: 2.5, attack: 0.001, decay: 0.05, peak: 0.3, wet: 0.2 });
-      hiss({ filter: 'highpass', from: 4500 * p, attack: 0.001, decay: 0.015, peak: 0.12, wet: 0.1 });
-      // Blades scraping along each other, low and gritty
-      hiss({ from: 3800 * p, to: 1100 * p, q: 7, at: 0.01, attack: 0.005, decay: 0.2, peak: 0.26, wet: 0.3 });
-      // Dark, heavy steel ring
-      for (const [f, pk, d] of [[620, 0.11, 1.4], [985, 0.11, 1.2], [1420, 0.08, 1.0], [1960, 0.055, 0.8], [2710, 0.03, 0.55]]) {
-        tone({ from: f * p, to: f * p * 0.99, at: 0.005, attack: 0.002, decay: d, peak: pk, wet: 0.45 });
-        tone({ from: f * p + 3, to: (f * p + 3) * 0.99, at: 0.005, attack: 0.002, decay: d * 0.9, peak: pk * 0.8, wet: 0.45 });
+      const hit = 0.06; // the swoosh leads into the impact
+
+      // 1. Swoosh of both blades coming in
+      hiss({ from: 900 * p, to: 3500 * p, q: 1.5, attack: 0.05, decay: 0.03, peak: 0.2, wet: 0.1 });
+
+      // 2. Impact: a distorted crack and a deep boom
+      const t = ctx.currentTime + hit;
+      const crack = ctx.createBufferSource();
+      crack.buffer = noise;
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = 1800 * p;
+      band.Q.value = 0.8;
+      const drive = ctx.createWaveShaper();
+      drive.curve = distortionCurve();
+      crack.connect(band);
+      band.connect(drive);
+      drive.connect(envelope(t, 0.55, 0.001, 0.09, 0.4));
+      crack.start(t, Math.random() * 0.5);
+      crack.stop(t + 0.15);
+      tone({ from: 120 * p, to: 42 * p, at: hit, attack: 0.002, decay: 0.5, peak: 0.6, wet: 0.3 });
+
+      // 3. Steel ring: detuned pairs spread left and right, bending down, with an echo
+      const bus = ctx.createGain();
+      bus.gain.value = 1;
+      bus.connect(master);
+      const send = ctx.createGain();
+      send.gain.value = 0.7;
+      bus.connect(send);
+      send.connect(reverb);
+      const echo = ctx.createDelay(1);
+      echo.delayTime.value = 0.19;
+      const feedback = ctx.createGain();
+      feedback.gain.value = 0.32;
+      const echoLevel = ctx.createGain();
+      echoLevel.gain.value = 0.45;
+      bus.connect(echo);
+      echo.connect(feedback);
+      feedback.connect(echo);
+      echo.connect(echoLevel);
+      echoLevel.connect(master);
+      const partials = [[740, 0.12, 1.9], [1110, 0.11, 1.6], [1650, 0.09, 1.3], [2470, 0.07, 1.0], [3700, 0.045, 0.7], [5550, 0.025, 0.45]];
+      partials.forEach(([f, pk, d], i) => {
+        for (const [detune, pan] of [[0, i % 2 ? -0.6 : 0.6], [4, i % 2 ? 0.5 : -0.5]]) {
+          const osc = ctx.createOscillator();
+          osc.frequency.setValueAtTime(f * p + detune, t);
+          osc.frequency.exponentialRampToValueAtTime((f * p + detune) * 0.985, t + d);
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(pk * (detune ? 0.8 : 1), t + 0.002);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+          osc.connect(g);
+          if (ctx.createStereoPanner) {
+            const panner = ctx.createStereoPanner();
+            panner.pan.value = pan;
+            g.connect(panner);
+            panner.connect(bus);
+          } else {
+            g.connect(bus);
+          }
+          osc.start(t);
+          osc.stop(t + d + 0.05);
+        }
+      });
+      // Blades scraping apart
+      hiss({ from: 5200 * p, to: 1400 * p, q: 8, at: hit + 0.01, attack: 0.005, decay: 0.3, peak: 0.28, wet: 0.4 });
+
+      // 4. Sparks crackling away
+      for (let i = 0; i < 16; i++) {
+        hiss({ filter: 'highpass', from: 5000 + Math.random() * 4000, at: hit + 0.04 + Math.random() * 0.45, attack: 0.001, decay: 0.006, peak: 0.16 * (1 - i / 20), wet: 0.3 });
       }
     },
     /** Shield takes the hit: a gong. */
