@@ -1083,6 +1083,12 @@ body.ninja { background: #1b1035; }
   .ninja .lobby { align-items: start; }
 }
 
+.hud-best { font-size: 11px; font-weight: 700; color: var(--muted); }
+.leaderboard-list li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leaderboard-list li.record { background: rgba(255, 225, 86, 0.16); }
+.leaderboard-list li.round { background: transparent; border: 1px dashed var(--line); font-size: 13px; }
+.leaderboard-list li.round strong { font-weight: 600; color: var(--muted); }
+
 /* ---------- Sound board (sounds.html) ---------- */
 
 .sounds-page { overflow-y: auto; }

@@ -76,6 +76,20 @@
     return;
   }
 
+  // Personal bests are kept on this phone only, one per player name.
+  const BEST_KEY = 'ploink-ninja-best';
+  const localBests = () => {
+    try { return JSON.parse(storage.get(localStorage, BEST_KEY) || '{}') || {}; } catch { return {}; }
+  };
+  const localBest = (name) => Math.max(0, Number(localBests()[name]) || 0);
+  function saveLocalBest(name, score) {
+    const all = localBests();
+    if (score <= (Number(all[name]) || 0)) return false;
+    all[name] = score;
+    storage.set(localStorage, BEST_KEY, JSON.stringify(all));
+    return true;
+  }
+
   let token = storage.get(sessionStorage, 'ploink-ninja-token');
   if (!token) {
     token = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
@@ -178,6 +192,7 @@
         if (me.id === null) placeAtStart(msg.startX);
         me = { id: msg.you, name: msg.name, color: msg.color };
         startX = msg.startX;
+        send({ type: 'best', score: localBest(me.name) });
         if (bestRtt === Infinity) clockOffset = msg.serverNow - performance.now();
         if (msg.token) {
           token = msg.token;
@@ -274,14 +289,17 @@
         shout('🐝 Autsch!', '#ffb84d');
         vibrate([120, 60, 120]);
         break;
-      case 'roundEnd':
+      case 'roundEnd': {
         SFX.fanfare();
+        const mine = msg.results.find((r) => r.id === me.id);
+        if (mine && saveLocalBest(me.name, mine.score)) shout(`🎉 Neuer Rekord: ${mine.score}!`, '#ffe156');
         if (msg.results.length > 0) {
           const winner = msg.results[0];
           toast(winner.id === me.id ? '🏆 Du hast gewonnen!' : `🏆 ${winner.name} gewinnt mit ${winner.score} Punkten`, winner.color);
           vibrate([80, 60, 80]);
         }
         break;
+      }
       case 'event':
         // Mid-round the score chips show newcomers; a message would only get in the way.
         if (msg.kind === 'join' && msg.id !== me.id && (!state || state.phase !== 'playing')) toast(`${msg.name} ist im Dojo`, msg.color);
@@ -299,6 +317,9 @@
     if (self) me.color = self.color;
     $('hud-count').textContent = msg.players.filter((p) => p.connected).length;
     $('hud-score').textContent = self ? self.score : 0;
+    const myBest = Math.max(self ? self.best || 0 : 0, localBest(me.name));
+    $('hud-best').hidden = myBest <= 0;
+    $('hud-best').textContent = ` · 🏆 ${myBest}`;
     $('hud-timer').hidden = msg.phase !== 'playing';
     lobby.hidden = msg.phase !== 'lobby';
     countdownEl.hidden = msg.phase !== 'countdown';
@@ -329,6 +350,7 @@
     renderTeam(msg.players);
     renderCrew(msg.players);
     renderResults(msg.lastResults);
+    renderLeaderboard(msg.players, msg.lastResults);
     $('start').textContent = msg.lastResults ? 'Nochmal!' : 'Runde starten';
     $('lobby-title').textContent = msg.lastResults ? '🍉 Runde vorbei!' : 'Schneidet, was vom Himmel fällt!';
   }
@@ -912,8 +934,58 @@
       name.textContent = r.name;
       name.style.color = r.color;
       const score = document.createElement('strong');
-      score.textContent = r.score;
+      score.textContent = r.record ? `🎉 ${r.score}` : r.score;
+      if (r.record) score.title = 'Neuer persönlicher Rekord';
       li.append(medal, name, score);
+      return li;
+    }));
+  }
+
+  /**
+   * Leaderboard of the personal bests of everybody in the room. After a round it also
+   * shows where each round score landed: new records are marked in the list, other
+   * scores get their own "this round" row at the place they would take.
+   */
+  function renderLeaderboard(players, results) {
+    const rows = [];
+    if (results && results.length) {
+      for (const r of results) {
+        rows.push({ id: r.id, name: r.name, color: r.color, value: r.best, record: r.record });
+        if (!r.record && r.score > 0) rows.push({ id: r.id, name: r.name, color: r.color, value: r.score, round: true });
+      }
+    } else {
+      for (const p of players) {
+        if (p.connected) rows.push({ id: p.id, name: p.name, color: p.color, value: p.best || 0 });
+      }
+    }
+    // Higher first; at equal value the best stands above the round score.
+    rows.sort((a, b) => b.value - a.value || (a.round ? 1 : 0) - (b.round ? 1 : 0));
+    $('leaderboard').hidden = rows.length === 0;
+    let rank = 0;
+    $('leaderboard-list').replaceChildren(...rows.map((row) => {
+      const li = document.createElement('li');
+      if (row.id === me.id) li.classList.add('me');
+      const place = document.createElement('span');
+      const name = document.createElement('span');
+      const value = document.createElement('strong');
+      if (row.round) {
+        // Where this round's score would stand among the bests.
+        const wouldBe = rows.filter((o) => !o.round && o.value > row.value).length + 1;
+        li.classList.add('round');
+        place.textContent = '▸';
+        name.textContent = `${row.id === me.id ? 'du' : row.name} – diese Runde, Platz ${wouldBe}`;
+      } else {
+        rank++;
+        place.textContent = `${rank}.`;
+        name.textContent = row.id === me.id ? `${row.name} (du)` : row.name;
+        if (row.record) {
+          li.classList.add('record');
+          name.textContent += ' – 🎉 neuer Rekord';
+        }
+      }
+      name.style.color = row.color;
+      value.textContent = row.value > 0 ? row.value : '–';
+      li.append(place, name, value);
       return li;
     }));
   }
@@ -1766,6 +1838,20 @@
     renderSound();
   });
   renderSound();
+
+  // Full screen (hidden where the browser cannot do it, e.g. iPhone Safari).
+  const fsBtn = $('fs');
+  const FS = window.PloinkFullscreen;
+  const renderFs = () => {
+    fsBtn.hidden = !FS.supported || FS.standalone;
+    fsBtn.classList.toggle('off', !FS.active);
+  };
+  fsBtn.addEventListener('click', () => {
+    FS.toggle();
+    renderFs();
+  });
+  FS.onChange(renderFs);
+  renderFs();
 
   // Background music on/off, separate from the sound effects.
   const musicBtn = $('music');

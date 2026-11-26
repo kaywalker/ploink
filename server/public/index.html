@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0d0f1a">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Ploink">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Ploink</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -62,6 +66,8 @@
         <p id="join-error" class="error" role="alert" hidden></p>
         <button id="join-button" type="submit" class="btn">Los geht’s</button>
         <button id="random-code" type="button" class="btn btn-ghost">Zufälligen Raum erstellen</button>
+        <button id="fullscreen" type="button" class="btn btn-ghost">⛶ Vollbild</button>
+        <p id="fullscreen-hint" class="hint" hidden>Auf dem iPhone gibt es im Browser kein Vollbild: Tippe unten auf das Teilen-Symbol und wähle „Zum Home-Bildschirm“. Von dort startet Ploink ohne Browserleiste.</p>
       </form>
 
       <p class="hint">Alle, die denselben Code eingeben, landen in derselben Runde.</p>
@@ -100,6 +106,7 @@
     <div id="offline" class="offline" hidden>Verbindung verloren – verbinde neu …</div>
   </section>
 
+  <script src="fullscreen.js"></script>
   <script src="shared/pong-hub.js"></script>
   <script src="shared/net.js"></script>
   <script src="game.js"></script>

@@ -86,6 +86,13 @@ async function main() {
   const joinedB = await b.next((m) => m.type === 'joined');
   assert.notEqual(joinedA.startX, joinedB.startX, 'ninjas start at different spots');
 
+  // Each phone reports its stored personal best; everybody sees it before the round.
+  a.send({ type: 'best', score: 5 });
+  b.send({ type: 'best', score: 100000 });
+  const bests = await b.next((m) => m.type === 'state' && m.players.some((p) => p.best === 5) && m.players.some((p) => p.best === 100000));
+  assert.equal(bests.players.length, 2);
+  console.log('✓ personal bests are shown to everybody in the room');
+
   a.send({ type: 'start' });
   await a.next((m) => m.type === 'state' && m.phase === 'countdown');
   await a.next((m) => m.type === 'state' && m.phase === 'playing');
@@ -311,6 +318,14 @@ async function main() {
   const end = await a.next((m) => m.type === 'roundEnd', 11000);
   assert.equal(end.results.length, 2);
   assert.ok(end.results[0].score >= end.results[1].score, 'results are sorted');
+  const annaEnd = end.results.find((r) => r.id === anna.id);
+  const benEnd = end.results.find((r) => r.id === ben.id);
+  assert.equal(annaEnd.prevBest, 5);
+  assert.equal(annaEnd.best, Math.max(5, annaEnd.score));
+  assert.equal(annaEnd.record, annaEnd.score > 5);
+  assert.equal(benEnd.record, false, 'Ben stays below his 100000');
+  assert.equal(benEnd.best, 100000);
+  console.log('✓ round results mark new records against the personal bests');
   await a.next((m) => m.type === 'state' && m.phase === 'lobby');
   console.log('✓ round ends with results');
 

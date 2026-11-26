@@ -103,6 +103,25 @@
     if (codeInput.value.length === 2 && !nameInput.value) nameInput.focus();
   });
 
+  // Full screen: remembered, every game page goes back to it on the first touch.
+  const fullscreenButton = $('fullscreen');
+  const fullscreenHint = $('fullscreen-hint');
+  const FS = window.PloinkFullscreen;
+  const renderFullscreen = () => {
+    fullscreenButton.hidden = FS.standalone; // started from the home screen: already without bars
+    fullscreenButton.textContent = FS.active ? '⛶ Vollbild beenden' : '⛶ Vollbild';
+  };
+  fullscreenButton.addEventListener('click', () => {
+    if (!FS.supported) {
+      fullscreenHint.hidden = false;
+      return;
+    }
+    FS.toggle();
+    renderFullscreen();
+  });
+  FS.onChange(renderFullscreen);
+  renderFullscreen();
+
   randomCodeButton.addEventListener('click', () => {
     codeInput.value = String(Math.floor(Math.random() * 100)).padStart(2, '0');
     joinError.hidden = true;

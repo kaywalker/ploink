@@ -34,10 +34,18 @@ the same two-digit room code.
   towards the tapped spot; it slices fruit on its way and knocks a ninja away (a spinning
   katana deflects it). Synthesized sound effects and a generative dojo background music (`sfx.js`,
   Web Audio; faster in the last 10 seconds) with separate sound and music buttons;
-  `sounds.html` plays each one on its own. 75-second rounds; best played in portrait.
+  `sounds.html` plays each one on its own. Every phone keeps its own best score per
+  player name; the lobby shows the bests of everybody in the room, and after a round it
+  marks new records and where each round score would land in that list. 75-second rounds; best played in portrait.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.
+
+**Full screen:** the start page has a full-screen button; the choice is remembered and
+every game page goes back to full screen on the first touch (`fullscreen.js`). Android
+and iPad support this in the browser; on iPhone, Safari only allows full screen for
+videos, so Ploink runs without browser bars when it is added to the home screen
+(`manifest.webmanifest`, apple-touch-icon).
 
 ## Architecture
 

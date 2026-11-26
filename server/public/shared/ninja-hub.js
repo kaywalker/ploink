@@ -198,7 +198,7 @@
         phaseEndsAt: this.phaseEndsAt,
         serverNow: Date.now(),
         players: [...this.players.values()].map((p) => ({
-          id: p.id, name: p.name, color: p.color, score: p.score, connected: !!p.socket,
+          id: p.id, name: p.name, color: p.color, score: p.score, best: p.best, connected: !!p.socket,
         })),
         lastResults: this.lastResults,
       });
@@ -238,6 +238,7 @@
         p.stunnedUntil = 0;
         p.effects = {};
         p.stars = 0;
+        p.prevBest = p.best;
       }
       this.broadcastState();
       clearTimeout(this.phaseTimer);
@@ -251,9 +252,15 @@
       this.fruits.clear();
       this.items.clear();
       this.stars.clear();
+      // Each phone keeps its own best per name; the hub only collects them for the
+      // leaderboard and tells everybody where this round's scores landed.
+      for (const p of this.players.values()) p.best = Math.max(p.best, p.score);
       this.lastResults = [...this.players.values()]
         .sort((a, b) => b.score - a.score)
-        .map((p) => ({ id: p.id, name: p.name, color: p.color, score: p.score }));
+        .map((p) => ({
+          id: p.id, name: p.name, color: p.color, score: p.score,
+          prevBest: p.prevBest, best: p.best, record: p.score > 0 && p.score > p.prevBest,
+        }));
       this.broadcast({ type: 'roundEnd', results: this.lastResults });
       this.broadcastState();
     }
@@ -604,6 +611,8 @@
       this.bumpReadyAt = 0;
       this.effects = {};        // item kind -> active until (ms)
       this.stars = 0;           // shuriken left to throw
+      this.best = 0;            // personal best, as stored on the player's phone
+      this.prevBest = 0;        // best before the current round
       this.pos = null;
       this.socket = null;
       this.removeTimer = null;
@@ -701,6 +710,12 @@
           break;
         case 'throw':
           room.throwStar(player, msg);
+          break;
+        case 'best':
+          // The phone's stored personal best for this name (sent on joining).
+          player.best = Math.round(clamp(msg.score, 0, 1_000_000));
+          if (room.phase !== 'playing') player.prevBest = player.best;
+          room.broadcastState();
           break;
         case 'starHit':
           room.starHit(player, msg);
