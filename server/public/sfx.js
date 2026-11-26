@@ -454,11 +454,11 @@ window.PloinkSfx = (() => {
      * strong partials (about 1.6, 2.2, 2.8, 3.3, 3.9 and 6.1 kHz; 2133 and 2191 Hz beat
      * against each other), of which 2.2 and 3.9 kHz ring longest, over a faint low hum.
      * About one second long, -20 dB after ~0.18 s, nearly mono. Always the same pitch,
-     * shifted up by a third (all frequencies × 1.3) because it sounded too low in the game.
+     * shifted up a little (all frequencies × 1.16, about 2.5 semitones) for the game.
      */
     clash() {
       if (!ready()) return;
-      const p = 1.3;
+      const p = 1.3 * 2 ** (-2 / 12); // a third up, then a whole tone back down
       // "Tsch": the bright strike
       hiss({ filter: 'highpass', from: 4000 * p, attack: 0.001, decay: 0.06, peak: 0.55, wet: 0.15 });
       hiss({ from: 9000 * p, q: 1, attack: 0.001, decay: 0.045, peak: 0.35, wet: 0.1 });
