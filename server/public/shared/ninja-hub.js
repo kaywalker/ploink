@@ -30,7 +30,6 @@
 
     gravity: 26,
     jumpSpeed: 14,
-    maxJumps: 3,                // one from the ground plus two in the air
     spinSpeed: 15,              // rad/s while airborne: the ninja rolls, the katana spins with him
     slashMs: 320,               // tap on the ground: a spin in place
     bladeReach: 1.25,           // centre of the ninja to the tip of the katana

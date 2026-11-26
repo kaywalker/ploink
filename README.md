@@ -23,8 +23,8 @@ the same two-digit room code.
   instead of queueing on one side. Each phone follows its own janitor; the host simulates
   everything and sends ~15 snapshots per second.
 - **Katana-Küche** (`ninja.html`): up to six ninjas share one bamboo dojo and slice the fruit
-  and vegetables that fall from the sky. Swipe in a direction and the ninja jumps there; up
-  to three jumps in a row, every cut in the air gives one back. In the air the ninja rolls
+  and vegetables that fall from the sky. Swipe in a direction and the ninja jumps there,
+  also in mid-air as often as you like. In the air the ninja rolls
   and the spinning katana cuts everything in reach (tap on the ground: a spin in place).
   Combos score a bonus, wasp nests cost points and stun. A katana hit kicks another ninja
   away and steals 10 of their points; if both katanas are spinning, the blades clash and

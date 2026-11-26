@@ -90,7 +90,7 @@
   const bumpCooldown = new Map();   // id -> time when the own katana may knock them again
 
   const ninja = {
-    x: W / 2, y: FOOT, vx: 0, vy: 0, air: false, jumps: CFG.maxJumps, rot: 0, spinDir: 1, facing: 1,
+    x: W / 2, y: FOOT, vx: 0, vy: 0, air: false, rot: 0, spinDir: 1, facing: 1,
     onPlatform: null, slashUntil: 0, stunnedUntil: 0, tumbleUntil: 0,
   };
 
@@ -260,7 +260,7 @@
 
   function placeAtStart(x) {
     Object.assign(ninja, {
-      x: Number.isFinite(x) ? x : W / 2, y: FOOT, vx: 0, vy: 0, air: false, jumps: CFG.maxJumps,
+      x: Number.isFinite(x) ? x : W / 2, y: FOOT, vx: 0, vy: 0, air: false,
       rot: 0, onPlatform: null, slashUntil: 0, stunnedUntil: 0, tumbleUntil: 0,
     });
   }
@@ -315,17 +315,16 @@
       slash();
       return;
     }
-    if (ninja.jumps <= 0) return;
     if (!ninja.air) dy = Math.max(dy, 0.35); // a sideways hop from the ground still lifts off
     len = Math.hypot(dx, dy);
     dx /= len;
     dy /= len;
-    if (!ninja.air) puff(ninja.x, ninja.y - FOOT);
+    // Air jumps are unlimited; a little puff under the feet shows each one.
+    puff(ninja.x, ninja.y - FOOT);
     ninja.vx = dx * CFG.jumpSpeed;
     ninja.vy = dy * CFG.jumpSpeed;
     ninja.air = true;
     ninja.onPlatform = null;
-    ninja.jumps--;
     ninja.tumbleUntil = 0; // jumping is how a kicked ninja catches himself
     if (Math.abs(dx) > 0.15) ninja.facing = dx > 0 ? 1 : -1;
     ninja.spinDir = ninja.facing;
@@ -356,7 +355,6 @@
     ninja.vy = 0;
     ninja.air = false;
     ninja.onPlatform = platform;
-    ninja.jumps = CFG.maxJumps;
     ninja.rot = 0;
     puff(ninja.x, height);
   }
@@ -420,7 +418,6 @@
       const angle = Math.atan2(dy, dx);
       fruits.delete(f.id);
       sliceFruit(f, pos, angle);
-      if (f.type !== 'nest' && ninja.air) ninja.jumps = Math.min(CFG.maxJumps, ninja.jumps + 1);
       send({ type: 'cut', id: f.id, x: round2(ninja.x), y: round2(ninja.y), angle: round2(angle) });
       vibrate(f.type === 'nest' ? 0 : 12);
     }
@@ -1161,7 +1158,7 @@
       }
     }
 
-    // Name tag (never rotated) and the jumps left for the own ninja
+    // Name tag (never rotated)
     ctx.textAlign = 'center';
     ctx.font = `700 ${Math.max(10, Math.round(S * 0.32))}px system-ui, sans-serif`;
     ctx.fillStyle = opts.isMe ? '#ffffff' : color;
@@ -1169,14 +1166,6 @@
     ctx.shadowBlur = 4;
     ctx.fillText(label, px, py - S * 1.15);
     ctx.shadowBlur = 0;
-    if (opts.isMe) {
-      for (let i = 0; i < CFG.maxJumps; i++) {
-        ctx.fillStyle = i < ninja.jumps ? color : 'rgba(255, 255, 255, 0.2)';
-        ctx.beginPath();
-        ctx.arc(px + (i - (CFG.maxJumps - 1) / 2) * S * 0.24, py - S * 1.0, S * 0.07, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
   }
 
   function drawEffects() {
