@@ -53,7 +53,7 @@
   // ---------------------------------------------------------------------------
   const $ = (id) => document.getElementById(id);
   const canvas = $('arena');
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d'); // swapped briefly while drawing the cached backdrop
   const area = $('arena-wrap');
   const hint = $('gesture-hint');
   const lobby = $('lobby');
@@ -890,13 +890,10 @@
       // Above the name tags of ninjas standing on the floor
       ctx.textAlign = 'center';
       ctx.fillStyle = `rgba(255, 225, 150, ${0.6 + 0.4 * pulse})`;
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = 6;
       ctx.font = `800 ${Math.max(16, Math.round(S * 0.6))}px system-ui, sans-serif`;
-      ctx.fillText('🔥 Der Boden wird heiß!', cssW / 2, gy - S * 3.1);
+      outlinedText('🔥 Der Boden wird heiß!', cssW / 2, gy - S * 3.1);
       ctx.font = `700 ${Math.max(12, Math.round(S * 0.36))}px system-ui, sans-serif`;
-      ctx.fillText('Ab auf die Plattformen', cssW / 2, gy - S * 2.5);
-      ctx.shadowBlur = 0;
+      outlinedText('Ab auf die Plattformen', cssW / 2, gy - S * 2.5);
       return;
     }
 
@@ -1343,8 +1340,11 @@
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
+  let backdrop = null; // cached dojo scenery, see drawDojo
+
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    // More than 2× is hardly visible on a phone but costs over twice the pixels of 2×.
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = canvas.getBoundingClientRect();
     cssW = Math.max(1, rect.width);
     cssH = Math.max(1, rect.height);
@@ -1354,11 +1354,14 @@
     S = Math.min(cssW / (W + 0.6), cssH / (H + 2.4));
     ox = (cssW - W * S) / 2;
     gy = cssH - S * 0.9;
+    backdrop = null; // redrawn at the new size
   }
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 
-  function drawDojo(t) {
+  // The dojo scenery never changes during a game, so it is drawn once per screen size
+  // into an offscreen canvas (`backdrop`, reset by resize) and copied each frame.
+  function drawScenery() {
     const sky = ctx.createLinearGradient(0, 0, 0, gy);
     sky.addColorStop(0, '#1b1035');
     sky.addColorStop(0.55, '#55285c');
@@ -1420,16 +1423,6 @@
       ctx.stroke();
     }
 
-    // Splats on the floor
-    for (const s of splats) {
-      ctx.globalAlpha = Math.min(1, s.life * 1.5) * 0.8;
-      ctx.fillStyle = s.color;
-      ctx.beginPath();
-      ctx.ellipse(sx(s.x), gy + 2, s.r * S * 1.3, s.r * S * 0.3, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
     // Bamboo platforms hanging on ropes
     for (const [l, r, h] of HUB.PLATFORMS) {
       ctx.strokeStyle = '#c9a26b';
@@ -1452,23 +1445,43 @@
     }
   }
 
+  function drawDojo() {
+    if (!backdrop) {
+      backdrop = document.createElement('canvas');
+      backdrop.width = canvas.width;
+      backdrop.height = canvas.height;
+      const main = ctx;
+      ctx = backdrop.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawScenery();
+      ctx = main;
+    }
+    ctx.drawImage(backdrop, 0, 0, cssW, cssH);
+
+    // Splats on the floor
+    for (const s of splats) {
+      ctx.globalAlpha = Math.min(1, s.life * 1.5) * 0.8;
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.ellipse(sx(s.x), gy + 2, s.r * S * 1.3, s.r * S * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // --- Fruit and vegetables, drawn in world units around (0, 0), canvas y down ---
   function drawFruitBody(type, r, t) {
     const skin = SKIN[type];
     switch (type) {
       case 'apple':
       case 'golden': {
-        if (type === 'golden') {
-          ctx.shadowColor = '#ffe156';
-          ctx.shadowBlur = 18;
-        }
+        if (type === 'golden') halo(0, 0, r * 0.6, r * 2.1, 'rgba(255, 225, 86, 0.55)');
         ctx.fillStyle = skin;
         ctx.beginPath();
         ctx.arc(-r * 0.32, 0, r * 0.75, 0, Math.PI * 2);
         ctx.arc(r * 0.32, 0, r * 0.75, 0, Math.PI * 2);
         ctx.arc(0, r * 0.15, r * 0.82, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.strokeStyle = '#6b3f22';
         ctx.lineWidth = r * 0.12;
         ctx.beginPath();
@@ -1857,9 +1870,7 @@
     ctx.textAlign = 'center';
     ctx.font = `700 ${Math.max(10, Math.round(S * 0.32))}px system-ui, sans-serif`;
     ctx.fillStyle = opts.isMe ? '#ffffff' : color;
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(label, px, py - S * 1.15);
+    outlinedText(label, px, py - S * 1.15);
     // The own active power-ups with the seconds left
     if (opts.isMe) {
       const active = Object.keys(ITEM_LOOK).filter((kind) => (kind === 'shuriken' ? myStars > 0 : effectOn(kind, now)));
@@ -1869,10 +1880,9 @@
         const text = active.map((kind) => (kind === 'shuriken'
           ? `✦ ${myStars}`
           : `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`)).join('   ');
-        ctx.fillText(text, px, py - S * 1.55);
+        outlinedText(text, px, py - S * 1.55);
       }
     }
-    ctx.shadowBlur = 0;
   }
 
   /** A power-up bubble: glassy sphere with the item's icon. */
@@ -1886,13 +1896,13 @@
     glass.addColorStop(0.6, 'rgba(255, 255, 255, 0.12)');
     glass.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
     ctx.save();
-    ctx.shadowColor = look.rim;
-    ctx.shadowBlur = 14;
+    ctx.globalAlpha = 0.5;
+    halo(px, py, r * 0.8, r * 1.6, look.rim);
+    ctx.globalAlpha = 1;
     ctx.fillStyle = glass;
     ctx.beginPath();
     ctx.arc(px, py, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
     ctx.strokeStyle = look.rim;
     ctx.lineWidth = Math.max(1.5, S * 0.05);
     ctx.stroke();
@@ -2027,14 +2037,35 @@
     for (const p of popups) {
       ctx.globalAlpha = Math.min(1, p.life * 1.5);
       ctx.fillStyle = p.color;
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = 4;
       // Keep the whole text on screen, also for a ninja at the wall.
       const half = ctx.measureText(p.text).width / 2 + 6;
-      ctx.fillText(p.text, Math.min(cssW - half, Math.max(half, sx(p.x))), sy(p.y));
+      outlinedText(p.text, Math.min(cssW - half, Math.max(half, sx(p.x))), sy(p.y));
     }
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
+  }
+
+  /** Text with a dark outline: reads like a soft shadow but costs far less than shadowBlur. */
+  function outlinedText(text, x, y) {
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.strokeText(text, x, y);
+    ctx.restore();
+    ctx.fillText(text, x, y);
+  }
+
+  /** Soft coloured halo behind round things, replacing a costly shadowBlur glow. */
+  function halo(x, y, inner, outer, color) {
+    const g = ctx.createRadialGradient(x, y, inner, x, y, outer);
+    // Fade to the same colour at alpha 0 (fading to transparent black leaves a grey rim).
+    const clear = color.startsWith('#')
+      ? `rgba(${parseInt(color.slice(1, 3), 16)}, ${parseInt(color.slice(3, 5), 16)}, ${parseInt(color.slice(5, 7), 16)}, 0)`
+      : color.replace(/,\s*[\d.]+\)$/, ', 0)');
+    g.addColorStop(0, color);
+    g.addColorStop(1, clear);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - outer, y - outer, outer * 2, outer * 2);
   }
 
   function roundRect(x, y, w, h, r) {
@@ -2050,7 +2081,7 @@
   function draw(now, list) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const t = now / 1000;
-    drawDojo(t);
+    drawDojo();
     drawLava(now);
     const st = serverNow();
     for (const f of fruits.values()) {
@@ -2110,7 +2141,41 @@
     lastPosSent = now;
   }
 
+  // Performance meter, shown with ?fps in the address: frames per second, the time the
+  // game needs per frame (simulation + drawing commands) and the canvas size in pixels.
+  const perf = /[?&]fps\b/.test(location.search) ? createPerfMeter() : null;
+
+  function createPerfMeter() {
+    const el = document.createElement('div');
+    el.className = 'perf-meter';
+    document.body.append(el);
+    let frames = 0;
+    let work = 0;
+    let worst = 0;
+    let since = performance.now();
+    const stats = { fps: 0, avgMs: 0, maxMs: 0 };
+    return {
+      stats,
+      record(ms) {
+        frames++;
+        work += ms;
+        worst = Math.max(worst, ms);
+        const t = performance.now();
+        if (t - since < 1000) return;
+        stats.fps = Math.round((frames * 1000) / (t - since));
+        stats.avgMs = Math.round((work / frames) * 100) / 100;
+        stats.maxMs = Math.round(worst * 100) / 100;
+        el.textContent = `${stats.fps} fps · Ø ${stats.avgMs.toFixed(1)} ms · max ${stats.maxMs.toFixed(1)} ms · ${canvas.width}×${canvas.height} (${dpr}×)`;
+        frames = 0;
+        work = 0;
+        worst = 0;
+        since = t;
+      },
+    };
+  }
+
   function frame() {
+    const frameStart = performance.now();
     // During a pause the game clock stands still: dt is 0 and the picture freezes.
     const now = gameNow();
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -2137,6 +2202,7 @@
     }
     draw(now, list);
     if (window.__ninja && window.__ninja.onFrame) window.__ninja.onFrame(now);
+    if (perf) perf.record(performance.now() - frameStart);
     requestAnimationFrame(frame);
   }
 
@@ -2277,6 +2343,17 @@
     gameNow,
     coins,
     spawnCoins,
+    get perf() { return perf && perf.stats; },
+    // Average time to draw one frame (drawing is flushed via a 1-pixel readback).
+    benchDraw(n = 60) {
+      const list = otherNinjas(gameNow());
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        draw(gameNow(), list);
+        ctx.getImageData(0, 0, 1, 1);
+      }
+      return (performance.now() - t0) / n;
+    },
     onFrame: null, // tests can capture frames at exact animation moments
   };
 })();
