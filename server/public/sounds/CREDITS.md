@@ -11,7 +11,6 @@ normalised. Licenses checked on 2026-11-27.
 | kick.mp3 | impactPunch_medium_001.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | kicked.mp3 | impactSoft_heavy_002.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | block.mp3 | impactMetal_heavy_000.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
-| go.mp3 | impactBell_heavy_001.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | beep.mp3 | select_002.ogg | Kenney, [Interface Sounds](https://kenney.nl/assets/interface-sounds) |
 | swish.mp3 | swish-6.wav | OpenGameArt, [Swishes Sound Pack](https://opengameart.org/content/swishes-sound-pack) |
 | throw.mp3 | swish-12.wav | OpenGameArt, [Swishes Sound Pack](https://opengameart.org/content/swishes-sound-pack) |
@@ -26,3 +25,4 @@ normalised. Licenses checked on 2026-11-27.
 | buzz.mp3 | Bee Buzzing | Freesound, [JonCon_Library #481647](https://freesound.org/people/JonCon_Library/sounds/481647/) |
 | lava-warn.mp3 | Hot Bubbling Mud | Freesound, [Breviceps #456806](https://freesound.org/people/Breviceps/sounds/456806/) |
 | lava-start.mp3 | Lava Loop 2 | Freesound, [Fission9 #474850](https://freesound.org/people/Fission9/sounds/474850/) |
+| go.mp3 | Gong Brilliant Paiste 32" | Freesound, [JensZygar #486629](https://freesound.org/people/JensZygar/sounds/486629/) |
