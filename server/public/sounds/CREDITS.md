@@ -21,7 +21,7 @@ normalised. Licenses checked on 2026-11-27.
 | splat.mp3 | squish_06.mp3 | OpenGameArt, [Squish sounds effects](https://opengameart.org/content/squish-sounds-effects) |
 | clash.mp3 | sword_clash.1.ogg | OpenGameArt, [20 Sword Sound Effects](https://opengameart.org/content/20-sword-sound-effects-attacks-and-clashes) |
 | blub.mp3 | bubble_03.ogg | OpenGameArt, [40 CC0 water / splash / slime SFX](https://opengameart.org/content/40-cc0-water-splash-slime-sfx) |
-| collect.mp3 | bubble_02.ogg | OpenGameArt, [40 CC0 water / splash / slime SFX](https://opengameart.org/content/40-cc0-water-splash-slime-sfx) |
+| collect.mp3 | confirmation_002.ogg | Kenney, [Interface Sounds](https://kenney.nl/assets/interface-sounds) |
 | sizzle.mp3 | spell_fire_02.ogg | OpenGameArt, [80 CC0 RPG SFX](https://opengameart.org/content/80-cc0-rpg-sfx) |
 | buzz.mp3 | Bee Buzzing | Freesound, [JonCon_Library #481647](https://freesound.org/people/JonCon_Library/sounds/481647/) |
 | lava-warn.mp3 | Hot Bubbling Mud | Freesound, [Breviceps #456806](https://freesound.org/people/Breviceps/sounds/456806/) |

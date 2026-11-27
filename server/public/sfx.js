@@ -551,7 +551,7 @@ window.PloinkSfx = (() => {
     /** Power-up bubble: a quick koto run up the scale. */
     collect() {
       if (!ready()) return;
-      if (sample('collect', { gain: 0.5, rate: vary(0.08) })) return;
+      if (sample('collect', { gain: 0.5, rate: vary(0.02) })) return;
       [5, 7, 9, 10].forEach((step, i) => pluck(note(step), { at: i * 0.055, peak: 0.24 }));
     },
     /** The floor gets hot: a taiko roll that speeds up and swells over two seconds. */
