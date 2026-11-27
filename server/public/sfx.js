@@ -1,6 +1,8 @@
 'use strict';
 
-// Ploink sound effects, synthesized with the Web Audio API (no audio files), in a dojo
+// Ploink sound effects with the Web Audio API: recorded CC0 samples (sounds/*.mp3) for the
+// effects, played with a little random pitch so repeats differ. The background music,
+// the round-end phrase and the fallback while samples load are synthesized in a dojo
 // flavour: taiko drums, koto-like plucks on a Japanese scale (Karplus-Strong), metallic
 // katana "shing", a gong, all through a little room reverb and a compressor.
 // Browsers only allow sound after a user gesture, so the context is created on the
@@ -90,6 +92,52 @@ window.PloinkSfx = (() => {
 
   const ready = () => ctx && !muted && ctx.state === 'running';
   const vary = (amount = 0.08) => 1 + (Math.random() * 2 - 1) * amount; // no two hits alike
+
+  // Recorded CC0 samples (see sounds/CREDITS.md), loaded after the first gesture.
+  // Until a sample is decoded, its effect falls back to the synthesized version.
+  const SAMPLES = ['jump', 'swish', 'blade', 'juice', 'crunch', 'coins', 'splat', 'buzz', 'kick', 'kicked',
+    'clash', 'block', 'throw', 'lava-warn', 'lava-start', 'blub', 'sizzle', 'collect', 'beep', 'go'];
+  const buffers = new Map();
+  let samplesRequested = false;
+
+  function loadSamples() {
+    if (samplesRequested || !ctx) return;
+    samplesRequested = true;
+    SAMPLES.forEach((name) => {
+      fetch(`sounds/${name}.mp3`)
+        .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(res.status))))
+        // Callback form: older Safari has no promise-returning decodeAudioData.
+        .then((data) => new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject)))
+        .then((buffer) => buffers.set(name, buffer))
+        .catch(() => { /* keep the synthesized fallback */ });
+    });
+  }
+  afterUnlock.push(loadSamples);
+
+  /**
+   * Plays a sample into the mix; `rate` shifts pitch and speed together. Returns false
+   * when the sample is not loaded yet, so the caller can synthesize instead.
+   */
+  function sample(name, { gain = 0.5, rate = 1, at = 0, wet = 0.1 } = {}) {
+    const buffer = buffers.get(name);
+    if (!buffer) return false;
+    const t = ctx.currentTime + at;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g);
+    g.connect(route || master);
+    if (wet > 0) {
+      const send = ctx.createGain();
+      send.gain.value = wet;
+      g.connect(send);
+      send.connect(reverb);
+    }
+    src.start(t);
+    return true;
+  }
 
   /** Gain envelope into the mix (and some of it into the reverb). */
   function envelope(start, peak, attack, decay, wet = 0.3) {
@@ -370,12 +418,14 @@ window.PloinkSfx = (() => {
     jump(inAir) {
       if (!ready()) return;
       const p = vary(0.1);
+      if (sample('jump', { gain: 0.45, rate: (inAir ? 1.25 : 1) * p })) return;
       hiss({ from: (inAir ? 600 : 400) * p, to: (inAir ? 1600 : 1100) * p, q: 1.2, attack: 0.04, decay: 0.16, peak: 0.28, wet: 0.15 });
     },
     /** One turn of the spinning katana: a "wusch" that swells and fades as it passes. */
     swish(volume = 1) {
       if (!ready()) return;
       const p = vary(0.15);
+      if (sample('swish', { gain: 0.4 * volume, rate: p })) return;
       hiss({ from: 450 * p, to: 1900 * p, q: 1.4, attack: 0.07, decay: 0.13, peak: 0.24 * volume, wet: 0.1 });
       hiss({ from: 1500 * p, to: 3800 * p, q: 3, at: 0.04, attack: 0.04, decay: 0.08, peak: 0.08 * volume, wet: 0.05 });
     },
@@ -390,6 +440,13 @@ window.PloinkSfx = (() => {
       const v = volume;
       const p = vary(0.1);
       const texture = FRUIT_TEXTURE[fruit] || 'juicy';
+      if (buffers.has('blade') && buffers.has('juice') && buffers.has('crunch')) {
+        // The blade, then the inside of the fruit a moment later (soft fruit: a lower squish).
+        sample('blade', { gain: 0.45 * v, rate: vary(0.06) });
+        const inside = texture === 'crunchy' ? 'crunch' : 'juice';
+        sample(inside, { gain: 0.55 * v, rate: (texture === 'soft' ? 0.8 : 1) * p, at: 0.03 });
+        return;
+      }
       // Swish of the blade, then the bite: "tschak!"
       hiss({ from: 1500 * p, to: 5000 * p, q: 2, attack: 0.008, decay: 0.05, peak: 0.12 * v, wet: 0.1 });
       hiss({ filter: 'highpass', from: 3200 * p, at: 0.012, attack: 0.001, decay: 0.035, peak: 0.55 * v, wet: 0.15 });
@@ -420,6 +477,10 @@ window.PloinkSfx = (() => {
      */
     combo(chain = 1, points = 10) {
       if (!ready()) return;
+      // Coins, one step of the in-scale higher per combo hit; big fruit jingle louder.
+      const steps = [0, 1, 5, 7, 8, 12, 13];
+      const step = steps[Math.max(0, Math.min(steps.length - 1, chain - 1))];
+      if (sample('coins', { gain: Math.min(0.7, 0.4 + points / 120), rate: 2 ** (step / 12) * vary(0.02) })) return;
       const base = note(8 + Math.min(chain - 1, 6)) * 2;
       const strikes = Math.max(4, Math.min(12, Math.round(2 + points / 5.5)));
       const gap = 0.03;
@@ -434,17 +495,20 @@ window.PloinkSfx = (() => {
     splat() {
       if (!ready()) return;
       const p = vary(0.15);
+      if (sample('splat', { gain: 0.4, rate: p })) return;
       hiss({ filter: 'lowpass', from: 700 * p, to: 180 * p, q: 2, attack: 0.004, decay: 0.12, peak: 0.2, wet: 0.15 });
     },
     /** Landing a kick: a taiko hit with a whoosh. */
     kick() {
       if (!ready()) return;
+      if (sample('kick', { gain: 0.6, rate: vary(0.06) })) return;
       taiko({ peak: 0.75 });
       hiss({ from: 900, to: 2500, q: 1.5, attack: 0.01, decay: 0.12, peak: 0.2, wet: 0.1 });
     },
     /** Getting kicked: a deep drum and a falling, bending pluck. */
     kicked() {
       if (!ready()) return;
+      if (sample('kicked', { gain: 0.65, rate: vary(0.05) })) return;
       taiko({ pitch: 0.8, peak: 0.7 });
       tone({ type: 'triangle', from: note(8), to: note(1), at: 0.04, attack: 0.005, decay: 0.35, peak: 0.12, wet: 0.4 });
     },
@@ -458,6 +522,7 @@ window.PloinkSfx = (() => {
      */
     clash() {
       if (!ready()) return;
+      if (sample('clash', { gain: 0.5, rate: vary(0.04), wet: 0.25 })) return;
       const p = 1.3 * 2 ** (-2 / 12); // a third up, then a whole tone back down
       // "Tsch": the bright strike
       hiss({ filter: 'highpass', from: 4000 * p, attack: 0.001, decay: 0.06, peak: 0.55, wet: 0.15 });
@@ -478,6 +543,7 @@ window.PloinkSfx = (() => {
     /** Shield takes the hit: a gong. */
     block() {
       if (!ready()) return;
+      if (sample('block', { gain: 0.55, rate: vary(0.04), wet: 0.3 })) return;
       for (const [f, pk, d] of [[196, 0.25, 1.4], [196 * 1.48, 0.12, 1.1], [196 * 2.16, 0.08, 0.8], [196 * 2.98, 0.05, 0.6]]) {
         tone({ from: f, to: f * 0.985, attack: 0.004, decay: d, peak: pk, wet: 0.6 });
       }
@@ -485,11 +551,13 @@ window.PloinkSfx = (() => {
     /** Power-up bubble: a quick koto run up the scale. */
     collect() {
       if (!ready()) return;
+      if (sample('collect', { gain: 0.5, rate: vary(0.08) })) return;
       [5, 7, 9, 10].forEach((step, i) => pluck(note(step), { at: i * 0.055, peak: 0.24 }));
     },
     /** The floor gets hot: a taiko roll that speeds up and swells over two seconds. */
     lavaWarn() {
       if (!ready()) return;
+      if (sample('lava-warn', { gain: 0.6, wet: 0.2 })) return;
       let at = 0;
       for (let i = 0; i < 12; i++) {
         taiko({ at, pitch: 0.9 + i * 0.02, peak: 0.2 + i * 0.04 });
@@ -500,6 +568,7 @@ window.PloinkSfx = (() => {
     /** Lava: a deep rumble under a big drum. */
     lavaStart() {
       if (!ready()) return;
+      if (sample('lava-start', { gain: 0.7, wet: 0.2 })) return;
       taiko({ pitch: 0.75, peak: 0.9 });
       hiss({ filter: 'lowpass', from: 220, to: 70, q: 2, attack: 0.05, decay: 1.4, peak: 0.55, wet: 0.4 });
       tone({ from: 55, to: 38, attack: 0.05, decay: 1.2, peak: 0.35, wet: 0.2 });
@@ -508,12 +577,14 @@ window.PloinkSfx = (() => {
     blub() {
       if (!ready()) return;
       const p = vary(0.25);
+      if (sample('blub', { gain: 0.35, rate: p })) return;
       tone({ from: 85 * p, to: 230 * p, attack: 0.005, decay: 0.09, peak: 0.14, wet: 0.3 });
       hiss({ filter: 'lowpass', from: 500 * p, attack: 0.003, decay: 0.04, peak: 0.08, wet: 0.2 });
     },
     /** Something hits the lava: a hiss with crackles. `volume` < 1 for far or small things. */
     sizzle(volume = 1) {
       if (!ready()) return;
+      if (sample('sizzle', { gain: 0.55 * volume, rate: vary(0.08) })) return;
       hiss({ filter: 'highpass', from: 2500, to: 5000, q: 0.7, attack: 0.01, decay: 0.6, peak: 0.32 * volume, wet: 0.2 });
       for (let i = 0; i < 8; i++) {
         hiss({ from: 3000 + Math.random() * 3000, q: 2, at: Math.random() * 0.4, attack: 0.001, decay: 0.01, peak: 0.25 * volume, wet: 0 });
@@ -523,6 +594,7 @@ window.PloinkSfx = (() => {
     /** Wasps. */
     buzz() {
       if (!ready()) return;
+      if (sample('buzz', { gain: 0.5, rate: vary(0.06) })) return;
       const t = ctx.currentTime;
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
@@ -546,6 +618,7 @@ window.PloinkSfx = (() => {
     /** Shuriken leaves the hand: a whirring metal spin. */
     throw() {
       if (!ready()) return;
+      if (sample('throw', { gain: 0.5, rate: vary(0.08) })) return;
       const t = ctx.currentTime;
       const src = ctx.createBufferSource();
       src.buffer = noise;
@@ -574,10 +647,12 @@ window.PloinkSfx = (() => {
     /** Countdown: a taiko beat per second, the last one bigger with a chord. */
     beep() {
       if (!ready()) return;
+      if (sample('beep', { gain: 0.6 })) return;
       taiko({ pitch: 1.15, peak: 0.55 });
     },
     go() {
       if (!ready()) return;
+      if (sample('go', { gain: 0.6, wet: 0.3 })) return;
       taiko({ pitch: 0.9, peak: 0.85 });
       taiko({ at: 0.12, pitch: 1.2, peak: 0.45 });
       [5, 7, 10].forEach((step) => pluck(note(step), { at: 0.02, peak: 0.2 }));
