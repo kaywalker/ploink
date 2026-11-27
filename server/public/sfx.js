@@ -95,7 +95,7 @@ window.PloinkSfx = (() => {
 
   // Recorded CC0 samples (see sounds/CREDITS.md), loaded after the first gesture.
   // Until a sample is decoded, its effect falls back to the synthesized version.
-  const SAMPLES = ['jump', 'swish', 'blade', 'juice', 'crunch', 'coins', 'splat', 'buzz', 'kick', 'kicked',
+  const SAMPLES = ['jump', 'swish', 'blade', 'juice', 'crunch', 'coins', 'splat', 'buzz', 'ouch',
     'clash', 'block', 'throw', 'lava-warn', 'lava-start', 'blub', 'sizzle', 'collect', 'beep', 'go'];
   const buffers = new Map();
   let samplesRequested = false;
@@ -115,10 +115,11 @@ window.PloinkSfx = (() => {
   afterUnlock.push(loadSamples);
 
   /**
-   * Plays a sample into the mix; `rate` shifts pitch and speed together. Returns false
-   * when the sample is not loaded yet, so the caller can synthesize instead.
+   * Plays a sample into the mix; `rate` shifts pitch and speed together, `length` (s)
+   * cuts it short with a quick fade. Returns false when the sample is not loaded yet,
+   * so the caller can synthesize instead.
    */
-  function sample(name, { gain = 0.5, rate = 1, at = 0, wet = 0.1 } = {}) {
+  function sample(name, { gain = 0.5, rate = 1, at = 0, wet = 0.1, length = 0 } = {}) {
     const buffer = buffers.get(name);
     if (!buffer) return false;
     const t = ctx.currentTime + at;
@@ -127,6 +128,11 @@ window.PloinkSfx = (() => {
     src.playbackRate.value = rate;
     const g = ctx.createGain();
     g.gain.value = gain;
+    if (length > 0) {
+      const fade = Math.min(0.06, length / 3);
+      g.gain.setValueAtTime(gain, t + length - fade);
+      g.gain.linearRampToValueAtTime(0, t + length);
+    }
     src.connect(g);
     g.connect(route || master);
     if (wet > 0) {
@@ -136,6 +142,7 @@ window.PloinkSfx = (() => {
       send.connect(reverb);
     }
     src.start(t);
+    if (length > 0) src.stop(t + length + 0.01); // stop() before start() throws
     return true;
   }
 
@@ -418,7 +425,8 @@ window.PloinkSfx = (() => {
     jump(inAir) {
       if (!ready()) return;
       const p = vary(0.1);
-      if (sample('jump', { gain: 0.45, rate: (inAir ? 1.25 : 1) * p })) return;
+      // In the air: the same jump, cut to under half its length.
+      if (sample('jump', { gain: 0.45, rate: p, length: inAir ? 0.16 : 0 })) return;
       hiss({ from: (inAir ? 600 : 400) * p, to: (inAir ? 1600 : 1100) * p, q: 1.2, attack: 0.04, decay: 0.16, peak: 0.28, wet: 0.15 });
     },
     /** One turn of the spinning katana: a "wusch" that swells and fades as it passes. */
@@ -498,17 +506,17 @@ window.PloinkSfx = (() => {
       if (sample('splat', { gain: 0.4, rate: p })) return;
       hiss({ filter: 'lowpass', from: 700 * p, to: 180 * p, q: 2, attack: 0.004, decay: 0.12, peak: 0.2, wet: 0.15 });
     },
-    /** Landing a kick: a taiko hit with a whoosh. */
+    /** Landing a kick: the same short, quiet "aargh" the kicked ninja hears (taiko hit as fallback). */
     kick() {
       if (!ready()) return;
-      if (sample('kick', { gain: 0.6, rate: vary(0.06) })) return;
+      if (sample('ouch', { gain: 0.28, rate: vary(0.06) })) return;
       taiko({ peak: 0.75 });
       hiss({ from: 900, to: 2500, q: 1.5, attack: 0.01, decay: 0.12, peak: 0.2, wet: 0.1 });
     },
-    /** Getting kicked: a deep drum and a falling, bending pluck. */
+    /** Getting kicked: a short, quiet "aargh" (a drum and a falling pluck as fallback). */
     kicked() {
       if (!ready()) return;
-      if (sample('kicked', { gain: 0.65, rate: vary(0.05) })) return;
+      if (sample('ouch', { gain: 0.32, rate: vary(0.06) })) return;
       taiko({ pitch: 0.8, peak: 0.7 });
       tone({ type: 'triangle', from: note(8), to: note(1), at: 0.04, attack: 0.005, decay: 0.35, peak: 0.12, wet: 0.4 });
     },
