@@ -11,7 +11,7 @@ normalised. Licenses checked on 2026-11-27.
 | kick.mp3 | impactPunch_medium_001.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | kicked.mp3 | impactSoft_heavy_002.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | block.mp3 | impactMetal_heavy_000.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
-| beep.mp3 | select_002.ogg | Kenney, [Interface Sounds](https://kenney.nl/assets/interface-sounds) |
+| beep.mp3 | impactWood_medium_000.ogg | Kenney, [Impact Sounds](https://kenney.nl/assets/impact-sounds) |
 | swish.mp3 | swish-6.wav | OpenGameArt, [Swishes Sound Pack](https://opengameart.org/content/swishes-sound-pack) |
 | throw.mp3 | swish-12.wav | OpenGameArt, [Swishes Sound Pack](https://opengameart.org/content/swishes-sound-pack) |
 | blade.mp3 | sword sound.wav | OpenGameArt, [3 melee sounds](https://opengameart.org/content/3-melee-sounds) |
