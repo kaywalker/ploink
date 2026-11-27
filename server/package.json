@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/control-hub.test.js && node test/brawl-hub.test.js && node test/ninja-hub.test.js && node test/smoke.js && node test/shooter-smoke.js && node test/gallery-smoke.js"
+    "test": "node test/control-hub.test.js && node test/brawl-hub.test.js && node test/ninja-hub.test.js && node test/bake-hub.test.js && node test/smoke.js && node test/shooter-smoke.js && node test/gallery-smoke.js"
   },
   "engines": {
     "node": ">=22"

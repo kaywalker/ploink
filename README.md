@@ -39,6 +39,15 @@ the same two-digit room code.
   `sounds.html` plays each one on its own. Every phone keeps its own best score per
   player name; the lobby shows the bests of everybody in the room, and after a round it
   marks new records and where each round score would land in that list. 75-second rounds; best played in portrait.
+- **Plätzchen-Duell** (`bake.html`): two players bake the same random recipe, each on their
+  own phone, station by station: weigh the ingredients from a shelf on a kitchen scale (hold
+  to pour) and stir them in the bowl, roll the dough to the right thickness, cut out the right
+  number of shapes, bake at the right temperature for the right time, stir the icing from
+  powdered sugar and lemon juice, colour it with one of 7 piping bags and pick the sprinkles.
+  The recipe can be opened at any time. At the end both plates are shown side by side with a
+  score per station and what differed from the recipe; the more accurate baker wins a new
+  baking utensil (collected per phone in localStorage). Playing alone works as practice
+  (a prize from 90 %).
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.
@@ -75,7 +84,7 @@ PORT_PREFIX=30 docker compose up -d
 ```
 
 Open `http://localhost:3080` (or `http://<your-LAN-IP>:3080` on phones in the same Wi-Fi).
-Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`, `/ninja.html#42`.
+Room codes can be passed in the URL: `/#42` (Pong), `/shooter.html#42`, `/gallery.html#42`, `/control.html#42`, `/brawl.html#42`, `/ninja.html#42`, `/bake.html#42`.
 Peer-to-peer mode can be tried locally with `http://<host>:3080/?net=p2p`.
 
 ## Run without a server (static hosting)

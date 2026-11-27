@@ -4,11 +4,11 @@
 // The site loads instantly on later visits (playing still needs the PeerJS broker).
 // The game server's health check and WebSockets are never cached.
 
-const CACHE = 'ploink-v15';
+const CACHE = 'ploink-v16';
 const ASSETS = [
-  './', 'index.html', 'shooter.html', 'gallery.html', 'control.html', 'brawl.html', 'ninja.html', 'style.css', 'favicon.svg',
-  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js', 'sfx.js', 'sounds.html', 'sounds.js', 'screen-mode.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
-  'shared/net.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js', 'shared/ninja-hub.js',
+  './', 'index.html', 'shooter.html', 'gallery.html', 'control.html', 'brawl.html', 'ninja.html', 'bake.html', 'style.css', 'bake.css', 'favicon.svg',
+  'game.js', 'shooter.js', 'gallery.js', 'control.js', 'brawl.js', 'ninja.js', 'bake.js', 'sfx.js', 'sounds.html', 'sounds.js', 'screen-mode.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+  'shared/net.js', 'shared/pong-hub.js', 'shared/blaster-hub.js', 'shared/gallery-hub.js', 'shared/control-hub.js', 'shared/brawl-hub.js', 'shared/ninja-hub.js', 'shared/bake-hub.js',
   'vendor/peerjs-1.5.5.min.js',
   ...['jump', 'swish', 'blade', 'juice', 'crunch', 'coins', 'splat', 'buzz', 'ouch', 'clash', 'block', 'throw',
     'lava-warn', 'lava-start', 'blub', 'sizzle', 'collect', 'beep', 'go'].map((name) => `sounds/${name}.mp3`),
