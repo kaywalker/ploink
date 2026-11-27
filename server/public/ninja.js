@@ -339,7 +339,7 @@
     state = msg;
     if (msg.lava) lastLava = msg.lava;
     if (msg.phase !== 'playing') lastLava = null;
-    for (const p of msg.players) playerInfo.set(p.id, { name: p.name, color: p.color });
+    for (const p of msg.players) playerInfo.set(p.id, { name: p.name, color: p.color, bot: p.bot });
     const self = msg.players.find((p) => p.id === me.id);
     if (self) me.color = self.color;
     $('hud-count').textContent = msg.players.filter((p) => p.connected).length;
@@ -375,6 +375,7 @@
     applyPause(msg);
     renderTeam(msg.players);
     renderCrew(msg.players);
+    renderBotPicker(msg.players);
     renderResults(msg.lastResults);
     renderLeaderboard(msg.players, msg.lastResults);
     $('start').textContent = msg.lastResults ? 'Nochmal!' : 'Runde starten';
@@ -1221,9 +1222,25 @@
       const num = document.createElement('b');
       num.textContent = i + 1;
       const name = document.createElement('span');
-      name.textContent = p.id === me.id ? `${p.name} (du)` : p.name;
+      name.textContent = p.id === me.id ? `${p.name} (du)` : p.bot ? `🪵 ${p.name}` : p.name;
+      if (p.bot) li.classList.add('bot');
       li.append(num, name);
       return li;
+    }));
+  }
+
+  /** Buttons "aus, 1 … 5" for the number of wooden puppets; full rooms grey out the rest. */
+  function renderBotPicker(players) {
+    const bots = players.filter((p) => p.bot).length;
+    const free = HUB.CONFIG.maxPlayersPerRoom - players.filter((p) => !p.bot).length;
+    $('bot-picker').replaceChildren(...[0, 1, 2, 3, 4, 5].map((count) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = count ? count : 'aus';
+      btn.setAttribute('aria-pressed', String(count === bots));
+      btn.disabled = count > Math.min(free, HUB.BOT.names.length);
+      btn.addEventListener('click', () => send({ type: 'bots', count }));
+      return btn;
     }));
   }
 
@@ -1236,7 +1253,7 @@
       const medal = document.createElement('span');
       medal.textContent = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
       const name = document.createElement('span');
-      name.textContent = r.name;
+      name.textContent = r.bot ? `🪵 ${r.name}` : r.name;
       name.style.color = r.color;
       const score = document.createElement('strong');
       score.textContent = r.record ? `🎉 ${r.score}` : r.score;
@@ -1255,12 +1272,13 @@
     const rows = [];
     if (results && results.length) {
       for (const r of results) {
+        if (r.bot) continue; // the puppets keep no personal bests
         rows.push({ id: r.id, name: r.name, color: r.color, value: r.best, record: r.record });
         if (!r.record && r.score > 0) rows.push({ id: r.id, name: r.name, color: r.color, value: r.score, round: true });
       }
     } else {
       for (const p of players) {
-        if (p.connected) rows.push({ id: p.id, name: p.name, color: p.color, value: p.best || 0 });
+        if (p.connected && !p.bot) rows.push({ id: p.id, name: p.name, color: p.color, value: p.best || 0 });
       }
     }
     // Higher first; at equal value the best stands above the round score.
@@ -1753,6 +1771,61 @@
     if (n.stun) ctx.globalAlpha = 0.75;
 
     const tuck = n.air ? 1 : 0;
+    if (opts.bot) drawPuppetFigure(color, tuck, giant, t);
+    else drawNinjaFigure(color, tuck, giant, t);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.lineCap = 'butt';
+
+    // Shield bubble around the ninja
+    if (eff & BIT.shield) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(77, 214, 255, 0.85)';
+      ctx.fillStyle = 'rgba(77, 214, 255, 0.14)';
+      ctx.lineWidth = Math.max(1.5, S * 0.06);
+      ctx.beginPath();
+      ctx.arc(px, py, S * 0.82, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.beginPath();
+      ctx.arc(px, py, S * 0.66, Math.PI * 1.1, Math.PI * 1.45);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Dizzy stars while stunned
+    if (n.stun) {
+      ctx.fillStyle = '#ffe156';
+      ctx.font = `${Math.round(S * 0.3)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 3; i++) {
+        const a = t * 4 + (i * Math.PI * 2) / 3;
+        ctx.fillText('★', px + Math.cos(a) * S * 0.35, py - S * 0.85 + Math.sin(a) * S * 0.1);
+      }
+    }
+
+    // Name tag (never rotated)
+    ctx.textAlign = 'center';
+    ctx.font = `700 ${Math.max(10, Math.round(S * 0.32))}px system-ui, sans-serif`;
+    ctx.fillStyle = opts.isMe ? '#ffffff' : color;
+    outlinedText(label, px, py - S * 1.15);
+    // The own active power-ups with the seconds left
+    if (opts.isMe) {
+      const active = Object.keys(ITEM_LOOK).filter((kind) => (kind === 'shuriken' ? myStars > 0 : effectOn(kind, now)));
+      if (active.length) {
+        ctx.font = `700 ${Math.max(10, Math.round(S * 0.3))}px system-ui, sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        const text = active.map((kind) => (kind === 'shuriken'
+          ? `✦ ${myStars}`
+          : `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`)).join('   ');
+        outlinedText(text, px, py - S * 1.55);
+      }
+    }
+  }
+
+  /** The ninja itself, in its own units (y down, facing right). */
+  function drawNinjaFigure(color, tuck, giant, t) {
     // Headband tails flutter behind the head
     ctx.strokeStyle = color;
     ctx.lineWidth = 0.07;
@@ -1834,55 +1907,147 @@
     ctx.fillRect(0.13, -0.43, 0.04, 0.05);
     ctx.fillStyle = color;
     ctx.fillRect(-0.22, -0.56, 0.44, 0.07);
-    ctx.restore();
-    ctx.globalAlpha = 1;
-    ctx.lineCap = 'butt';
+  }
 
-    // Shield bubble around the ninja
-    if (eff & BIT.shield) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(77, 214, 255, 0.85)';
-      ctx.fillStyle = 'rgba(77, 214, 255, 0.14)';
-      ctx.lineWidth = Math.max(1.5, S * 0.06);
+  /**
+   * A wooden training puppet (bot): pegged limbs with ball joints, a barrel body with
+   * grain lines, a painted face and a wooden practice sword (bokken). Same pose and
+   * units as drawNinjaFigure; the colour shows on the sash and the headband.
+   */
+  function drawPuppetFigure(color, tuck, giant, t) {
+    const LIGHT = '#e3b47a';
+    const MID = '#c48d52';
+    const DARK = '#7a4b22';
+    const joint = (x, y, r) => {
+      ctx.fillStyle = DARK;
       ctx.beginPath();
-      ctx.arc(px, py, S * 0.82, 0, Math.PI * 2);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    };
+    ctx.lineCap = 'round';
+
+    // Headband tails
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.06;
+    for (let i = 0; i < 2; i++) {
+      const wave = Math.sin(t * 12 + i) * 0.07;
       ctx.beginPath();
-      ctx.arc(px, py, S * 0.66, Math.PI * 1.1, Math.PI * 1.45);
+      ctx.moveTo(-0.2, -0.52);
+      ctx.quadraticCurveTo(-0.42, -0.52 + wave + i * 0.06, -0.58, -0.44 + wave * 2 + i * 0.1);
       ctx.stroke();
-      ctx.restore();
     }
 
-    // Dizzy stars while stunned
-    if (n.stun) {
-      ctx.fillStyle = '#ffe156';
-      ctx.font = `${Math.round(S * 0.3)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      for (let i = 0; i < 3; i++) {
-        const a = t * 4 + (i * Math.PI * 2) / 3;
-        ctx.fillText('★', px + Math.cos(a) * S * 0.35, py - S * 0.85 + Math.sin(a) * S * 0.1);
-      }
+    // Legs: two pegs each, with a knee joint
+    for (const side of [-1, 1]) {
+      const hip = { x: side * 0.1, y: 0.28 };
+      const knee = { x: side * 0.13 + tuck * 0.1, y: 0.4 - tuck * 0.08 };
+      const foot = { x: side * 0.12 + tuck * 0.14 - tuck * side * 0.02, y: 0.53 - tuck * 0.2 };
+      ctx.strokeStyle = MID;
+      ctx.lineWidth = 0.11;
+      ctx.beginPath();
+      ctx.moveTo(hip.x, hip.y);
+      ctx.lineTo(knee.x, knee.y);
+      ctx.lineTo(foot.x, foot.y);
+      ctx.stroke();
+      joint(knee.x, knee.y, 0.045);
     }
 
-    // Name tag (never rotated)
-    ctx.textAlign = 'center';
-    ctx.font = `700 ${Math.max(10, Math.round(S * 0.32))}px system-ui, sans-serif`;
-    ctx.fillStyle = opts.isMe ? '#ffffff' : color;
-    outlinedText(label, px, py - S * 1.15);
-    // The own active power-ups with the seconds left
-    if (opts.isMe) {
-      const active = Object.keys(ITEM_LOOK).filter((kind) => (kind === 'shuriken' ? myStars > 0 : effectOn(kind, now)));
-      if (active.length) {
-        ctx.font = `700 ${Math.max(10, Math.round(S * 0.3))}px system-ui, sans-serif`;
-        ctx.fillStyle = '#ffffff';
-        const text = active.map((kind) => (kind === 'shuriken'
-          ? `✦ ${myStars}`
-          : `${ITEM_LOOK[kind].icon} ${Math.ceil((myEffects[kind] - now) / 1000)}s`)).join('   ');
-        outlinedText(text, px, py - S * 1.55);
-      }
+    // Barrel body with grain
+    const wood = ctx.createLinearGradient(-0.26, 0, 0.26, 0);
+    wood.addColorStop(0, MID);
+    wood.addColorStop(0.45, LIGHT);
+    wood.addColorStop(1, MID);
+    ctx.fillStyle = wood;
+    roundRect(-0.24, -0.2, 0.48, 0.5, 0.16);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(122, 75, 34, 0.55)';
+    ctx.lineWidth = 0.018;
+    for (const gx of [-0.1, 0.07]) {
+      ctx.beginPath();
+      ctx.moveTo(gx, -0.16);
+      ctx.bezierCurveTo(gx + 0.05, -0.02, gx - 0.05, 0.1, gx + 0.02, 0.26);
+      ctx.stroke();
     }
+    ctx.beginPath();
+    ctx.ellipse(-0.05, 0.02, 0.035, 0.06, 0.3, 0, Math.PI * 2); // a knot in the wood
+    ctx.stroke();
+    ctx.fillStyle = color; // sash
+    ctx.fillRect(-0.24, 0.12, 0.48, 0.07);
+    joint(0, -0.21, 0.05); // neck peg
+
+    // Bokken: a wooden practice sword with a dark guard
+    const hand = { x: 0.24, y: 0.0 };
+    ctx.save();
+    ctx.translate(hand.x, hand.y);
+    ctx.rotate(-0.95);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.09;
+    ctx.beginPath();
+    ctx.moveTo(-0.26, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+    ctx.fillStyle = '#3a2412';
+    ctx.beginPath();
+    ctx.ellipse(0.02, 0, 0.04, 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (giant) ctx.scale(1.8, 1.3);
+    ctx.fillStyle = '#b07a42';
+    ctx.beginPath();
+    ctx.moveTo(0.05, -0.045);
+    ctx.quadraticCurveTo(0.6, -0.09, 1.05, -0.025);
+    ctx.lineTo(1.03, 0.01);
+    ctx.lineTo(0.05, 0.045);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = LIGHT;
+    ctx.lineWidth = 0.02;
+    ctx.beginPath();
+    ctx.moveTo(0.08, -0.03);
+    ctx.quadraticCurveTo(0.6, -0.07, 1.0, -0.018);
+    ctx.stroke();
+    ctx.restore();
+
+    // Arm peg with a shoulder joint
+    ctx.strokeStyle = MID;
+    ctx.lineWidth = 0.1;
+    ctx.beginPath();
+    ctx.moveTo(0.08, -0.1);
+    ctx.lineTo(hand.x, hand.y);
+    ctx.stroke();
+    joint(0.08, -0.1, 0.05);
+
+    // Round wooden head with a painted, grim face and the headband
+    const head = ctx.createRadialGradient(-0.06, -0.47, 0.02, 0, -0.4, 0.24);
+    head.addColorStop(0, LIGHT);
+    head.addColorStop(1, MID);
+    ctx.fillStyle = head;
+    ctx.beginPath();
+    ctx.arc(0, -0.4, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(122, 75, 34, 0.5)';
+    ctx.lineWidth = 0.016;
+    ctx.beginPath();
+    ctx.arc(-0.04, -0.36, 0.1, Math.PI * 0.6, Math.PI * 1.4);
+    ctx.stroke();
+    ctx.strokeStyle = '#2b1a0c';
+    ctx.lineWidth = 0.025;
+    ctx.beginPath(); // eyebrows
+    ctx.moveTo(0.0, -0.46);
+    ctx.lineTo(0.08, -0.43);
+    ctx.moveTo(0.18, -0.46);
+    ctx.lineTo(0.11, -0.43);
+    ctx.stroke();
+    ctx.fillStyle = '#2b1a0c';
+    ctx.beginPath(); // eyes
+    ctx.arc(0.06, -0.39, 0.025, 0, Math.PI * 2);
+    ctx.arc(0.14, -0.39, 0.025, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath(); // mouth
+    ctx.moveTo(0.06, -0.3);
+    ctx.lineTo(0.15, -0.31);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillRect(-0.21, -0.57, 0.42, 0.07);
   }
 
   /** A power-up bubble: glassy sphere with the item's icon. */
@@ -2108,7 +2273,7 @@
     for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
     for (const o of list) {
       const info = playerInfo.get(o.id) || { name: '?', color: '#ccc' };
-      drawNinja(o, info.color, info.name, now, { spinning: !!o.air, eff: o.eff });
+      drawNinja(o, info.color, info.name, now, { spinning: !!o.air, eff: o.eff, bot: info.bot });
     }
     if (me.id) {
       const stun = now < ninja.stunnedUntil;
@@ -2344,6 +2509,8 @@
     coins,
     spawnCoins,
     get perf() { return perf && perf.stats; },
+    get others() { return otherNinjas(gameNow()); },
+    toScreen: (x, y) => ({ x: sx(x), y: sy(y), scale: S }),
     // Average time to draw one frame (drawing is flushed via a 1-pixel readback).
     benchDraw(n = 60) {
       const list = otherNinjas(gameNow());

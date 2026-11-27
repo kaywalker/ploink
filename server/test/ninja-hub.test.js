@@ -422,11 +422,89 @@ async function main() {
   await a.next((m) => m.type === 'state' && m.phase === 'lobby');
   console.log('✓ round ends with results');
 
+  await botTests();
+
   a.socket.close();
   b.socket.close();
   bad.socket.close();
   console.log('\nAll Katana-Küche hub tests passed.');
   process.exit(0);
+}
+
+/** Wooden puppets: seats, physics, claims and results (white-box where timing matters). */
+async function botTests() {
+  const eva = fakeClient('Eva');
+  eva.send({ type: 'join', code: '55', name: 'Eva', token: 'eva-token-01' });
+  await eva.next((m) => m.type === 'joined');
+  const room = hub.rooms.get('55');
+  const botsIn = (m) => m.players.filter((p) => p.bot);
+
+  eva.send({ type: 'bots', count: 3 });
+  let st = await eva.next((m) => m.type === 'state' && botsIn(m).length === 3);
+  assert.deepEqual(botsIn(st).map((p) => p.name), ['Klotz', 'Splitter', 'Knorz']);
+  assert.ok(botsIn(st).every((p) => p.connected), 'bots count as present');
+  eva.send({ type: 'bots', count: 99 });
+  st = await eva.next((m) => m.type === 'state' && m.bots === 5);
+  assert.equal(botsIn(st).length, 5, 'at most five bots, the sixth seat is Eva');
+  console.log('✓ the lobby sets how many wooden puppets play along');
+
+  const finn = fakeClient('Finn');
+  finn.send({ type: 'join', code: '55', name: 'Finn', token: 'finn-token-1' });
+  await finn.next((m) => m.type === 'joined');
+  assert.equal(room.bots().length, 4, 'a bot makes room for a human');
+  assert.equal(room.players.size, hub.CONFIG.maxPlayersPerRoom);
+  finn.send({ type: 'leave' });
+  assert.equal(room.bots().length, 5, 'and comes back when the seat is free again');
+  console.log('✓ bots give up their seats for humans');
+
+  eva.send({ type: 'pos', x: 5, y: 0.5, rot: 0, air: 0, facing: 1 });
+  eva.send({ type: 'start' });
+  await eva.next((m) => m.type === 'state' && m.phase === 'playing');
+  const ninjas = await eva.next((m) => m.type === 'ninjas' && m.list.length === 6);
+  assert.ok(ninjas.list.some((row) => row[0] === room.bots()[0].id), 'bots are in the position snapshots');
+
+  // A fruit right at a spinning bot gets cut by that bot.
+  const bot = room.bots()[0];
+  Object.assign(bot.body, { air: true, vy: 0, y: 6, x: 5, tumbleUntil: 0 });
+  bot.stunnedUntil = 0;
+  const fruit = room.spawnFruit(room.now(), { type: 'apple', r: 0.34, points: 10, x0: 5, y0: 6.3, vx: 0, v0: 0, g: 0.001 });
+  const cut = await eva.next((m) => m.type === 'cut' && m.id === fruit.id, 1000);
+  assert.equal(cut.by.id, bot.id);
+  console.log('✓ a bot cuts fruit with its spinning wooden sword');
+
+  // Eva kicks a standing bot: it flies away and tumbles.
+  const target = room.bots()[1];
+  Object.assign(target.body, { air: false, vx: 0, vy: 0, x: 3, y: 0.5, onPlatform: null });
+  room.syncBotPos(target, room.now());
+  target.score = 30;
+  room.players.get('eva-token-01').bumpReadyAt = 0;
+  eva.send({ type: 'pos', x: 2.2, y: 0.5, rot: 0, air: 1, facing: 1 });
+  eva.send({ type: 'bump', id: target.id });
+  const kick = await eva.next((m) => m.type === 'kick' && m.target.id === target.id, 1000);
+  assert.equal(kick.points, 10);
+  assert.ok(target.body.air && target.body.vx > 0, 'the bot is thrown away from Eva');
+  assert.ok(target.body.tumbleUntil > room.now(), 'and tumbles');
+  console.log('✓ kicks throw bots through the dojo');
+
+  // Physics: a body dropped above a platform lands on it.
+  const [left, right, height] = hub.PLATFORMS[2];
+  const body = { x: (left + right) / 2, y: height + 2, vx: 0, vy: 0, air: true, rot: 0, spinDir: 1, facing: 1, onPlatform: null, slashUntil: 0, tumbleUntil: 0 };
+  for (let i = 0; i < 240 && body.air; i++) hub.stepBody(body, 1 / 120, 0);
+  assert.equal(body.air, false);
+  assert.equal(body.y, height + 0.5);
+  console.log('✓ bot bodies land on the bamboo platforms');
+
+  await sleep(1500); // let them play a little
+  eva.send({ type: 'stop' });
+  const end = await eva.next((m) => m.type === 'roundEnd');
+  const botResults = end.results.filter((r) => r.bot);
+  assert.equal(botResults.length, 5);
+  assert.ok(botResults.every((r) => r.record === false && r.best === 0), 'bots keep no records');
+  console.log('✓ bots appear in the results but not in the bests');
+
+  eva.send({ type: 'leave' });
+  assert.equal(hub.rooms.has('55'), false, 'bots alone do not keep a room alive');
+  console.log('✓ the room closes when the last human leaves');
 }
 
 main().catch((e) => {

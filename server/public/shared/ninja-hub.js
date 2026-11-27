@@ -9,6 +9,10 @@
 // World units: x from the left wall (0 … WIDTH), y up from the floor (0 … HEIGHT).
 // Transport-agnostic like the other hubs: runs in Node (server.js) and in the browser
 // of the hosting phone.
+//
+// Bots ("Holzpuppen") fill up a room on request. They exist only here: the hub moves them
+// with the same physics the phones use (`stepBody`) and lets them claim cuts, kicks and
+// items through the same methods a phone's messages go through.
 
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -106,6 +110,21 @@
 
   const COLORS = ['#ff5d73', '#4dd6ff', '#7ee081', '#ffb84d', '#c77dff', '#ffe156'];
 
+  // Wooden training puppets. Mutable on purpose, like CONFIG.
+  const BOT = {
+    names: ['Klotz', 'Splitter', 'Knorz', 'Kiefer', 'Brettl'],
+    colors: ['#e0a96d', '#e07a5f', '#81b29a', '#9d8df1', '#f2cc8f'],
+    thinkMs: 320,               // reaction time between two decisions
+    jumpGapMs: [600, 1100],     // pause between two jumps
+    aimNoise: 0.3,              // rad, so they miss now and then
+    reachFactor: 0.85,          // a little shorter than HIT_REACH on the phones
+    throwGapMs: 1_500,
+    chaseRange: 2.8,            // a ninja this close may get chased for a kick
+    tumbleMs: 450,              // like TUMBLE_MS on the phones
+  };
+  const FOOT = 0.5;             // centre of a standing ninja above the floor (as in ninja.js)
+  const STEP = 1 / 120;         // physics step in seconds (as in ninja.js)
+
   const rooms = new Map();
   let nextFruitId = 1;
 
@@ -146,6 +165,58 @@
   const hasEffect = (p, kind, now) => (p.effects[kind] || 0) > now;
   const effectBits = (p, now) => Object.entries(ITEMS).reduce(
     (bits, [kind, def]) => bits | ((kind === 'shuriken' ? p.stars > 0 : hasEffect(p, kind, now)) ? def.bit : 0), 0);
+
+  const startX = (slot) => round2(1 + ((slot * 3.1) % (CONFIG.width - 2)));
+
+  /** A fresh standing body for a bot at the given x. */
+  function newBody(x) {
+    return {
+      x, y: FOOT, vx: 0, vy: 0, air: false, rot: 0, spinDir: 1, facing: 1,
+      onPlatform: null, slashUntil: 0, tumbleUntil: 0,
+    };
+  }
+
+  function landBody(n, height, platform) {
+    Object.assign(n, { y: height + FOOT, vx: 0, vy: 0, air: false, onPlatform: platform, rot: 0 });
+  }
+
+  /** One physics step of a bot body: the same rules as `step` in ninja.js. */
+  function stepBody(n, dt, now) {
+    if (n.air) {
+      const prevBottom = n.y - FOOT;
+      n.vy = Math.max(-CONFIG.maxFallSpeed, n.vy - CONFIG.gravity * dt);
+      n.x += n.vx * dt;
+      n.y += n.vy * dt;
+      n.rot += n.spinDir * CONFIG.spinSpeed * dt;
+      if (n.x < CONFIG.ninjaRadius) {
+        n.x = CONFIG.ninjaRadius;
+        n.vx = Math.abs(n.vx) * 0.4;
+      } else if (n.x > CONFIG.width - CONFIG.ninjaRadius) {
+        n.x = CONFIG.width - CONFIG.ninjaRadius;
+        n.vx = -Math.abs(n.vx) * 0.4;
+      }
+      if (n.y > CONFIG.height + 1.5) {
+        n.y = CONFIG.height + 1.5;
+        n.vy = Math.min(n.vy, 0);
+      }
+      const bottom = n.y - FOOT;
+      if (n.vy <= 0) {
+        for (const p of PLATFORMS) {
+          if (prevBottom >= p[2] - 0.02 && bottom <= p[2] && n.x >= p[0] - 0.1 && n.x <= p[1] + 0.1) {
+            landBody(n, p[2], p);
+            return;
+          }
+        }
+      }
+      if (bottom <= 0) landBody(n, 0, null);
+      return;
+    }
+    if (n.onPlatform && (n.x < n.onPlatform[0] - 0.1 || n.x > n.onPlatform[1] + 0.1)) {
+      n.air = true;
+      n.onPlatform = null;
+    }
+    n.rot = now < n.slashUntil ? n.spinDir * Math.PI * 2 * (1 - (n.slashUntil - now) / CONFIG.slashMs) : 0;
+  }
 
   /** Position and rotation of a fruit at hub time `now` (same formula on every phone). */
   function fruitPosition(f, now) {
@@ -194,6 +265,8 @@
       this.pausedSince = 0;     // Date.now() when the current pause began (0 = running)
       this.pausedTotal = 0;     // ms the clock was stopped so far
       this.pauseTimer = null;
+      this.botCount = 0;        // wanted number of bots (fewer when humans fill the room)
+      this.botClock = 0;        // hub time of the last bot physics update
     }
 
     /** Hub clock in ms: Date.now() minus all pauses, frozen during a pause. */
@@ -244,6 +317,68 @@
       return [...this.players.values()].filter((p) => p.socket);
     }
 
+    /** Everybody in the dojo: connected phones and bots. */
+    active() {
+      return [...this.players.values()].filter((p) => p.socket || p.bot);
+    }
+
+    bots() {
+      return [...this.players.values()].filter((p) => p.bot);
+    }
+
+    humans() {
+      return [...this.players.values()].filter((p) => !p.bot);
+    }
+
+    /** Lowest start slot nobody uses, so nobody starts on top of somebody else. */
+    freeSlot() {
+      const used = new Set([...this.players.values()].map((p) => p.slot));
+      let slot = 0;
+      while (used.has(slot)) slot++;
+      return slot;
+    }
+
+    /**
+     * Bring the bots in line with `botCount` and the free seats. Bots make room for
+     * humans at once; new bots only join between rounds (`allowAdd`).
+     */
+    syncBots(allowAdd = this.phase === 'lobby') {
+      const bots = this.bots();
+      const humans = this.humans().length;
+      const want = humans ? Math.min(this.botCount, CONFIG.maxPlayersPerRoom - humans) : 0;
+      while (bots.length > want) {
+        const bot = bots.pop();
+        this.players.delete(bot.token);
+        this.pausers.delete(bot.id);
+      }
+      if (!allowAdd) return;
+      const usedNames = new Set(bots.map((b) => b.botIndex));
+      for (let i = 0; bots.length < want && i < BOT.names.length; i++) {
+        if (usedNames.has(i)) continue;
+        const bot = new NinjaPlayer(this, `bot-${i}-${randomHex(4)}`, BOT.names[i], BOT.colors[i]);
+        bot.slot = this.freeSlot();
+        bot.bot = true;
+        bot.botIndex = i;
+        this.placeBot(bot, 0);
+        this.players.set(bot.token, bot);
+        bots.push(bot);
+      }
+    }
+
+    placeBot(bot, now) {
+      bot.body = newBody(startX(bot.slot));
+      bot.brain = { nextThinkAt: now, nextJumpAt: now + rand(300, 1000), nextThrowAt: now, goal: null };
+      this.syncBotPos(bot, now);
+    }
+
+    syncBotPos(bot, now) {
+      const b = bot.body;
+      bot.pos = {
+        x: round2(b.x), y: round2(b.y), rot: round2(b.rot), air: b.air ? 1 : 0,
+        facing: b.facing, at: now,
+      };
+    }
+
     broadcast(msg) {
       const data = JSON.stringify(msg);
       for (const p of this.players.values()) {
@@ -259,8 +394,10 @@
         serverNow: this.now(),
         paused: this.paused ? [...this.pausers] : null,
         players: [...this.players.values()].map((p) => ({
-          id: p.id, name: p.name, color: p.color, score: p.score, best: p.best, connected: !!p.socket,
+          id: p.id, name: p.name, color: p.color, score: p.score, best: p.best,
+          connected: !!(p.socket || p.bot), bot: !!p.bot,
         })),
+        bots: this.botCount,
         lastResults: this.lastResults,
         lava: this.lava,
       });
@@ -277,8 +414,12 @@
 
     startCountdown() {
       if (this.phase !== 'lobby' || this.connected().length === 0) return;
+      this.syncBots(true);
+      const now = this.now();
+      for (const bot of this.bots()) this.placeBot(bot, now);
+      this.botClock = now;
       this.phase = 'countdown';
-      this.phaseEndsAt = this.now() + CONFIG.countdownMs;
+      this.phaseEndsAt = now + CONFIG.countdownMs;
       this.broadcastState();
       this.schedulePhaseEnd();
     }
@@ -302,6 +443,7 @@
         p.effects = {};
         p.stars = 0;
         p.prevBest = p.best;
+        if (p.bot) p.brain.nextJumpAt = now + rand(150, 700);
       }
       this.broadcastState();
       this.schedulePhaseEnd();
@@ -319,12 +461,13 @@
       this.lava = null;
       // Each phone keeps its own best per name; the hub only collects them for the
       // leaderboard and tells everybody where this round's scores landed.
-      for (const p of this.players.values()) p.best = Math.max(p.best, p.score);
+      // Bots keep no bests: they stay out of the leaderboard.
+      for (const p of this.players.values()) if (!p.bot) p.best = Math.max(p.best, p.score);
       this.lastResults = [...this.players.values()]
         .sort((a, b) => b.score - a.score)
         .map((p) => ({
-          id: p.id, name: p.name, color: p.color, score: p.score,
-          prevBest: p.prevBest, best: p.best, record: p.score > 0 && p.score > p.prevBest,
+          id: p.id, name: p.name, color: p.color, score: p.score, bot: !!p.bot,
+          prevBest: p.prevBest, best: p.best, record: !p.bot && p.score > 0 && p.score > p.prevBest,
         }));
       this.broadcast({ type: 'roundEnd', results: this.lastResults });
       this.broadcastState();
@@ -339,7 +482,7 @@
           if (f.t0 + fruitLifetime(f) + 500 < now) this.fruits.delete(id);
         }
         const progress = 1 - Math.max(0, this.phaseEndsAt - now) / CONFIG.roundMs;
-        const rate = (CONFIG.baseSpawnPerSecond + CONFIG.spawnPerSecondPerPlayer * this.connected().length)
+        const rate = (CONFIG.baseSpawnPerSecond + CONFIG.spawnPerSecondPerPlayer * this.active().length)
           * (1 + CONFIG.rampUp * progress);
         this.spawnBudget += rate * (CONFIG.tickMs / 1000);
         while (this.spawnBudget >= 1) {
@@ -368,9 +511,10 @@
       }
       // Ninja positions go out in every phase except the lobby, which covers the dojo.
       if (this.phase !== 'lobby') {
+        this.updateBots(now);
         this.broadcast({
           type: 'ninjas',
-          list: this.connected().filter((p) => p.pos).map((p) => [
+          list: this.active().filter((p) => p.pos).map((p) => [
             p.id, p.pos.x, p.pos.y, p.pos.rot, p.pos.air, now < p.stunnedUntil ? 1 : 0, p.pos.facing, effectBits(p, now),
           ]),
         });
@@ -520,7 +664,7 @@
       const x = Number(msg.x);
       const y = Number(msg.y);
       if (!Number.isFinite(x) || !Number.isFinite(y) || !this.onStarLine(star, x, y)) return;
-      const target = this.connected().find((p) => p.id === msg.target && p !== player);
+      const target = this.active().find((p) => p.id === msg.target && p !== player);
       if (!target || !target.pos) return;
       if (Math.hypot(target.pos.x - x, target.pos.y - y) > CONFIG.ninjaRadius + CONFIG.starRadius + CONFIG.positionTolerance) return;
       const now = this.now();
@@ -542,11 +686,10 @@
       const points = Math.min(CONFIG.kickSteal, Math.max(0, target.score));
       target.score -= points;
       player.score += points;
-      this.broadcast({
-        type: 'kick', ...at, by: who(player), target: who(target), points, via: 'star',
-        vx: round2(star.dx * CONFIG.bumpSpeed),
-        vy: round2(Math.max(0.4, star.dy + 0.6) * CONFIG.bumpSpeed * 0.7),
-      });
+      const vx = round2(star.dx * CONFIG.bumpSpeed);
+      const vy = round2(Math.max(0.4, star.dy + 0.6) * CONFIG.bumpSpeed * 0.7);
+      this.broadcast({ type: 'kick', ...at, by: who(player), target: who(target), points, via: 'star', vx, vy });
+      this.knockBot(target, vx, vy, true);
       if (points) this.broadcastState();
     }
 
@@ -638,7 +781,7 @@
       if (this.phase === 'lobby') return;
       const now = this.now();
       if (now < player.bumpReadyAt || now < player.stunnedUntil || !player.pos) return;
-      const target = this.connected().find((p) => p.id === msg.id && p !== player);
+      const target = this.active().find((p) => p.id === msg.id && p !== player);
       if (!target || !target.pos) return;
       const dx = target.pos.x - player.pos.x;
       const dy = target.pos.y - player.pos.y;
@@ -655,37 +798,317 @@
       if (targetSpinning) {
         target.bumpReadyAt = now + CONFIG.bumpCooldownMs; // its own report of the same contact is ignored
         const push = (sign) => [round2(sign * ux * CONFIG.clashSpeed), round2(Math.max(0.5, sign * uy + 0.7) * CONFIG.clashSpeed * 0.6)];
-        this.broadcast({
-          type: 'clash', ...at, a: who(player), b: who(target),
-          push: { [player.id]: push(-1), [target.id]: push(1) },
-        });
+        const pushes = { [player.id]: push(-1), [target.id]: push(1) };
+        this.broadcast({ type: 'clash', ...at, a: who(player), b: who(target), push: pushes });
+        this.knockBot(player, ...pushes[player.id], false);
+        this.knockBot(target, ...pushes[target.id], false);
         return;
       }
 
       if (hasEffect(target, 'shield', now)) {
         // The shield blocks the kick: the kicker bounces off, the shield is used up.
         target.effects.shield = 0;
-        this.broadcast({
-          type: 'kick', ...at, by: who(player), target: who(target), points: 0, blocked: true,
-          vx: round2(-ux * CONFIG.bumpSpeed * 0.8),
-          vy: round2(Math.max(0.4, -uy + 0.6) * CONFIG.bumpSpeed * 0.6),
-        });
+        const vx = round2(-ux * CONFIG.bumpSpeed * 0.8);
+        const vy = round2(Math.max(0.4, -uy + 0.6) * CONFIG.bumpSpeed * 0.6);
+        this.broadcast({ type: 'kick', ...at, by: who(player), target: who(target), points: 0, blocked: true, vx, vy });
+        this.knockBot(player, vx, vy, false);
         return;
       }
 
       const points = this.phase === 'playing' ? Math.min(CONFIG.kickSteal, Math.max(0, target.score)) : 0;
       target.score -= points;
       player.score += points;
-      this.broadcast({
-        type: 'kick', ...at, by: who(player), target: who(target), points,
-        vx: round2(ux * CONFIG.bumpSpeed),
-        vy: round2(Math.max(0.4, uy + 0.6) * CONFIG.bumpSpeed * 0.7),
-      });
+      const vx = round2(ux * CONFIG.bumpSpeed);
+      const vy = round2(Math.max(0.4, uy + 0.6) * CONFIG.bumpSpeed * 0.7);
+      this.broadcast({ type: 'kick', ...at, by: who(player), target: who(target), points, vx, vy });
+      this.knockBot(target, vx, vy, true);
       if (points) this.broadcastState();
     }
 
+    // -------------------------------------------------------------------------
+    // Bots
+    // -------------------------------------------------------------------------
+
+    /** Thrown through the air by a kick or a clash (no-op for phones: they do it themselves). */
+    knockBot(p, vx, vy, tumble) {
+      if (!p.bot) return;
+      const b = p.body;
+      const now = this.now();
+      Object.assign(b, { air: true, onPlatform: null, vx, vy, spinDir: vx >= 0 ? 1 : -1 });
+      if (tumble) b.tumbleUntil = now + BOT.tumbleMs;
+      // Catch itself with a jump after a moment, like a human would.
+      p.brain.nextJumpAt = Math.max(p.brain.nextJumpAt, now + rand(250, 550));
+      p.brain.goal = null;
+    }
+
+    /** Move, think and claim for every bot (called from tick outside the lobby). */
+    updateBots(now) {
+      const bots = this.bots();
+      const dt = Math.min(0.25, Math.max(0, (now - this.botClock) / 1000));
+      this.botClock = now;
+      if (!bots.length) return;
+      if (this.phase !== 'playing') {
+        for (const bot of bots) this.syncBotPos(bot, now);
+        return;
+      }
+      const steps = Math.round(dt / STEP);
+      for (const bot of bots) {
+        if (!this.players.has(bot.token)) continue; // sent home by a claim in this tick
+        for (let i = 0; i < steps; i++) {
+          const ts = now - (steps - 1 - i) * STEP * 1000;
+          stepBody(bot.body, STEP, ts);
+          this.syncBotPos(bot, ts);
+          this.botContact(bot, ts);
+        }
+        this.syncBotPos(bot, now);
+        this.botThink(bot, now);
+        this.botLava(bot, now);
+      }
+      this.updateBotStars(now);
+    }
+
+    botReach(bot, now) {
+      return CONFIG.bladeReach * BOT.reachFactor + (hasEffect(bot, 'giant', now) ? CONFIG.giantReach * BOT.reachFactor : 0);
+    }
+
+    botBladeActive(bot, now) {
+      const b = bot.body;
+      return (b.air || now < b.slashUntil) && now >= bot.stunnedUntil && now >= b.tumbleUntil;
+    }
+
+    /** What the spinning wooden sword touches: fruit, bubbles and other ninjas. */
+    botContact(bot, now) {
+      const b = bot.body;
+      const active = this.botBladeActive(bot, now);
+      const reach = this.botReach(bot, now);
+      if (active) {
+        for (const f of this.fruits.values()) {
+          const pos = fruitPosition(f, now);
+          if (pos.y > CONFIG.height + 1) continue;
+          if (Math.hypot(pos.x - b.x, pos.y - b.y) > reach + f.r) continue;
+          this.cut(bot, { id: f.id, x: b.x, y: b.y, angle: Math.atan2(pos.y - b.y, pos.x - b.x) });
+        }
+      }
+      if (now >= bot.stunnedUntil) {
+        for (const it of this.items.values()) {
+          const pos = fruitPosition(it, now);
+          if (Math.hypot(pos.x - b.x, pos.y - b.y) <= (active ? reach : CONFIG.ninjaRadius) + it.r) {
+            this.collect(bot, { id: it.id, x: b.x, y: b.y });
+          }
+        }
+      }
+      if (active && now >= bot.bumpReadyAt) {
+        const other = this.active().find((o) => o !== bot && o.pos
+          && Math.hypot(o.pos.x - b.x, o.pos.y - b.y) <= reach + CONFIG.ninjaRadius);
+        if (other) this.bump(bot, { id: other.id });
+      }
+    }
+
+    /** Standing on the hot floor costs points, like a phone reporting it. */
+    botLava(bot, now) {
+      const lava = this.lava;
+      if (!lava || now < lava.startAt || now > lava.endAt) return;
+      if (!bot.body.air && !bot.body.onPlatform) this.burn(bot);
+    }
+
+    /** A jump in direction (dx, dy), with the same rules as a swipe on a phone. */
+    botJump(bot, dx, dy, now) {
+      const b = bot.body;
+      if (now < bot.stunnedUntil) return;
+      let len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      if (!b.air && dy < -0.5) { // a swipe down on the ground is a sword spin
+        if (now >= b.slashUntil) {
+          b.slashUntil = now + CONFIG.slashMs;
+          b.spinDir = b.facing;
+        }
+        return;
+      }
+      if (!b.air) dy = Math.max(dy, 0.35);
+      len = Math.hypot(dx, dy);
+      const speed = CONFIG.jumpSpeed * (hasEffect(bot, 'turbo', now) ? CONFIG.turboFactor : 1);
+      b.vx = (dx / len) * speed;
+      b.vy = (dy / len) * speed;
+      b.air = true;
+      b.onPlatform = null;
+      b.tumbleUntil = 0;
+      if (Math.abs(dx) > 0.15) b.facing = dx > 0 ? 1 : -1;
+      b.spinDir = b.facing;
+    }
+
+    /**
+     * The jump direction that brings the body to the moving point `at(t)`: tries flight
+     * times and keeps the one whose needed speed is closest to the real jump speed.
+     */
+    aim(bot, at, now) {
+      const b = bot.body;
+      const speed = CONFIG.jumpSpeed * (hasEffect(bot, 'turbo', now) ? CONFIG.turboFactor : 1);
+      let best = null;
+      for (let T = 0.08; T <= 0.9; T += 0.04) {
+        const p = at(now + T * 1000);
+        const dx = p.x - b.x;
+        const dy = p.y - b.y + 0.5 * CONFIG.gravity * T * T; // gravity pulls it down meanwhile
+        const err = Math.abs(Math.hypot(dx, dy) / T - speed);
+        if (!best || err < best.err) best = { dx, dy, err };
+      }
+      return best;
+    }
+
+    /** The most attractive thing to go for, or null. */
+    botGoal(bot, now, hot) {
+      const b = bot.body;
+      const others = this.bots().filter((o) => o !== bot && o.brain.goal);
+      const nests = [...this.fruits.values()].filter((f) => f.type === 'nest');
+      let best = null;
+      const consider = (key, value, at) => {
+        const p = at(now + 400);
+        if (p.y > CONFIG.height - 0.3 || p.y < 0.5 || p.x < 0 || p.x > CONFIG.width) return;
+        if (hot && p.y < 3.5) return; // the floor is (about to be) lava: stay up high
+        let score = value / (Math.hypot(p.x - b.x, p.y - b.y) + 2);
+        // Keep away from wasp nests and do not all go for the same fruit.
+        if (nests.some((n) => n.id !== key && Math.hypot(fruitPosition(n, now + 400).x - p.x, fruitPosition(n, now + 400).y - p.y) < 1.4)) score *= 0.2;
+        if (others.some((o) => o.brain.goal.key === key)) score *= 0.45;
+        if (bot.brain.goal && bot.brain.goal.key === key) score *= 1.3; // stick to a plan
+        score *= rand(0.85, 1.15);
+        if (!best || score > best.score) best = { key, score, at };
+      };
+      for (const f of this.fruits.values()) {
+        if (f.type !== 'nest') consider(`f${f.id}`, f.points, (t) => fruitPosition(f, t));
+      }
+      for (const it of this.items.values()) consider(`i${it.id}`, 22, (t) => fruitPosition(it, t));
+      for (const o of this.active()) {
+        if (o === bot || !o.pos || o.score <= 0 || now < o.stunnedUntil) continue;
+        const d = Math.hypot(o.pos.x - b.x, o.pos.y - b.y);
+        if (d < BOT.chaseRange) {
+          const at = () => ({ x: o.pos.x, y: o.pos.y });
+          consider(`n${o.id}`, 9, at);
+        }
+      }
+      return best;
+    }
+
+    /** Nearest platform to wait out the lava on. */
+    safeSpot(bot) {
+      const b = bot.body;
+      let best = null;
+      for (const p of PLATFORMS) {
+        const spot = { x: Math.min(p[1] - 0.4, Math.max(p[0] + 0.4, b.x)), y: p[2] + FOOT + 0.6 };
+        const d = Math.hypot(spot.x - b.x, spot.y - b.y);
+        if (!best || d < best.d) best = { d, spot };
+      }
+      return best.spot;
+    }
+
+    /** Decide what to do next: throw, jump after something, flee the lava or rest. */
+    botThink(bot, now) {
+      const brain = bot.brain;
+      const b = bot.body;
+      if (now < brain.nextThinkAt || now < bot.stunnedUntil) return;
+      brain.nextThinkAt = now + BOT.thinkMs * rand(0.7, 1.3);
+
+      if (bot.stars > 0 && now >= brain.nextThrowAt) {
+        const victims = this.active().filter((o) => o !== bot && o.pos
+          && Math.hypot(o.pos.x - b.x, o.pos.y - b.y) < CONFIG.starRange * 0.7);
+        if (victims.length) {
+          const v = victims[Math.floor(Math.random() * victims.length)];
+          const a = Math.atan2(v.pos.y - b.y, v.pos.x - b.x) + rand(-BOT.aimNoise, BOT.aimNoise);
+          this.throwStar(bot, { dx: Math.cos(a), dy: Math.sin(a) });
+          brain.nextThrowAt = now + BOT.throwGapMs * rand(0.8, 1.5);
+        }
+      }
+
+      // A wasp nest right in the path of the spinning sword: jump away (most of the time).
+      if (b.air && now >= (brain.dodgedAt || 0) + 400) {
+        const reach = this.botReach(bot, now);
+        const ahead = { x: b.x + b.vx * 0.15, y: b.y + b.vy * 0.15 };
+        for (const f of this.fruits.values()) {
+          if (f.type !== 'nest') continue;
+          const p = fruitPosition(f, now + 150);
+          if (Math.hypot(p.x - ahead.x, p.y - ahead.y) > reach + f.r + 0.5) continue;
+          brain.dodgedAt = now;
+          if (Math.random() < 0.65) {
+            this.botJump(bot, b.x - p.x + rand(-0.3, 0.3), b.y - p.y, now);
+            brain.nextJumpAt = now + rand(...BOT.jumpGapMs);
+            brain.goal = null;
+            return;
+          }
+          break;
+        }
+      }
+
+      if (now < brain.nextJumpAt) return;
+      const lava = this.lava;
+      const hot = !!lava && now >= lava.warnAt - 500 && now <= lava.endAt;
+      // Low down while the floor is (about to be) hot: up onto a platform first.
+      const flee = hot && !b.onPlatform && b.y < 3.5;
+      const goal = flee ? null : this.botGoal(bot, now, hot);
+      brain.goal = goal;
+      let at = goal ? goal.at : null;
+      if (!at && hot && !b.onPlatform) {
+        const spot = this.safeSpot(bot);
+        at = () => spot;
+      }
+      if (!at) {
+        // Nothing worth it: stand still, or hop around now and then.
+        if (!b.air && Math.random() < 0.25) {
+          this.botJump(bot, rand(-1, 1), 1, now);
+          brain.nextJumpAt = now + rand(...BOT.jumpGapMs);
+        }
+        return;
+      }
+      const p = at(now + 120);
+      const reach = this.botReach(bot, now);
+      if (goal && Math.hypot(p.x - b.x, p.y - b.y) < reach * 0.8) {
+        // Already within reach: in the air the sword spins anyway, on the ground spin it.
+        if (!b.air) this.botJump(bot, 0, -1, now);
+        brain.nextJumpAt = now + 150;
+        return;
+      }
+      const shot = this.aim(bot, at, now);
+      const angle = Math.atan2(shot.dy, shot.dx) + rand(-BOT.aimNoise, BOT.aimNoise);
+      this.botJump(bot, Math.cos(angle), Math.sin(angle), now);
+      brain.nextJumpAt = now + rand(...BOT.jumpGapMs);
+    }
+
+    /** Bot shuriken: the hub flies them itself and claims what they hit. */
+    updateBotStars(now) {
+      for (const star of this.stars.values()) {
+        if (star.done) continue;
+        const bot = this.bots().find((p) => p.id === star.by);
+        if (!bot) continue;
+        const reached = Math.min(CONFIG.starRange, ((now - star.t0) / 1000) * CONFIG.starSpeed);
+        let d = star.checked || 0;
+        for (; d <= reached && !star.done; d += 0.25) {
+          const x = star.x0 + star.dx * d;
+          const y = star.y0 + star.dy * d;
+          if (x < 0 || x > CONFIG.width || y < 0 || y > CONFIG.height + 2) {
+            star.done = true;
+            break;
+          }
+          const t = star.t0 + (d / CONFIG.starSpeed) * 1000;
+          for (const f of this.fruits.values()) {
+            if (f.type === 'nest') continue;
+            const pos = fruitPosition(f, t);
+            if (Math.hypot(pos.x - x, pos.y - y) <= CONFIG.starRadius + f.r) {
+              this.cut(bot, { id: f.id, x: round2(x), y: round2(y), star: star.id, angle: Math.atan2(star.dy, star.dx) });
+            }
+          }
+          const hit = this.active().find((o) => o !== bot && o.pos
+            && Math.hypot(o.pos.x - x, o.pos.y - y) <= CONFIG.starRadius + CONFIG.ninjaRadius);
+          if (hit) {
+            this.starHit(bot, { star: star.id, x: round2(x), y: round2(y), target: hit.id });
+            star.done = true;
+          }
+        }
+        star.checked = d;
+        if (reached >= CONFIG.starRange) star.done = true;
+      }
+    }
+
     removeIfEmpty() {
-      if (this.players.size === 0) {
+      if (this.humans().length === 0) {
+        this.players.clear(); // bots do not keep a room alive
         this.stopLoop();
         clearTimeout(this.phaseTimer);
         clearTimeout(this.pauseTimer);
@@ -695,12 +1118,13 @@
   }
 
   class NinjaPlayer {
-    constructor(room, token, name) {
+    constructor(room, token, name, color) {
       this.id = randomHex(4);
       this.token = token;
       this.name = name;
-      this.color = COLORS[room.colorIndex++ % COLORS.length];
-      this.slot = room.players.size;
+      this.color = color || COLORS[room.colorIndex++ % COLORS.length];
+      this.slot = room.freeSlot();
+      this.bot = false;
       this.score = 0;
       this.chain = 0;
       this.lastCutAt = 0;
@@ -747,20 +1171,21 @@
       }
       player.name = sanitizeName(msg.name, player.name);
     } else {
-      if (room.players.size >= CONFIG.maxPlayersPerRoom) {
+      // Bots never take a seat a human wants: syncBots below sends one home.
+      if (room.humans().length >= CONFIG.maxPlayersPerRoom) {
         socket.send(JSON.stringify({ type: 'error', message: 'Dieser Dojo ist voll (höchstens 6 Ninjas).' }));
         return null;
       }
-      player = new NinjaPlayer(room, token, sanitizeName(msg.name, `Ninja ${room.players.size + 1}`));
+      player = new NinjaPlayer(room, token, sanitizeName(msg.name, `Ninja ${room.humans().length + 1}`));
       room.players.set(token, player);
+      room.syncBots();
     }
 
     player.socket = socket;
     // Starting spot on the floor, spread across the dojo.
-    const startX = round2(1 + ((player.slot * 3.1) % (CONFIG.width - 2)));
     player.send({
       type: 'joined', code, you: player.id, token, color: player.color, name: player.name,
-      serverNow: room.now(), startX,
+      serverNow: room.now(), startX: startX(player.slot),
     });
     if (room.phase === 'playing') {
       player.send({ type: 'fruits', list: [...room.fruits.values()] });
@@ -821,6 +1246,7 @@
           clearTimeout(player.removeTimer);
           room.players.delete(player.token);
           session = null;
+          room.syncBots();
           room.pausers.delete(player.id);
           room.updatePause();
           room.broadcastState();
@@ -840,6 +1266,13 @@
           break;
         case 'start':
           room.startCountdown();
+          break;
+        case 'bots':
+          // How many wooden puppets play along; only between rounds.
+          if (room.phase !== 'lobby') break;
+          room.botCount = Math.round(clamp(msg.count, 0, BOT.names.length));
+          room.syncBots();
+          room.broadcastState();
           break;
         case 'pause':
           room.setPause(player, !!msg.on);
@@ -861,6 +1294,7 @@
       room.updatePause();
       player.removeTimer = setTimeout(() => {
         room.players.delete(player.token);
+        room.syncBots();
         room.broadcastState();
         room.removeIfEmpty();
       }, CONFIG.disconnectGraceMs);
@@ -868,5 +1302,5 @@
     });
   }
 
-  return { handleConnection, fruitPosition, fruitLifetime, rooms, CONFIG, FRUITS, ITEMS, PLATFORMS };
+  return { handleConnection, fruitPosition, fruitLifetime, stepBody, rooms, CONFIG, BOT, FRUITS, ITEMS, PLATFORMS };
 });

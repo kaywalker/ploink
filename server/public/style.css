@@ -533,6 +533,27 @@ body.gallery { background: #1b1033; }
 .seat-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seat-list li.me { border-color: var(--seat-color); }
 .seat-list li.offline { opacity: 0.4; }
+.seat-list li.bot { background: rgba(224, 169, 109, 0.12); }
+
+/* Katana-Küche: how many wooden puppets play along */
+.bot-picker { display: grid; justify-items: center; gap: 6px; }
+.bot-picker-label { font-size: 14px; opacity: 0.85; }
+.bot-picker-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.bot-picker-buttons button {
+  min-width: 42px;
+  height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.bot-picker-buttons button[aria-pressed="true"] { color: #2a1a0a; background: #e0a96d; border-color: #e0a96d; }
+.bot-picker-buttons button:disabled { opacity: 0.3; cursor: default; }
 
 .seat-list b {
   display: grid;

@@ -16,3 +16,4 @@
 - Static files are served with `no-store` (browsers kept stale CSS with no-cache).
 - `node --watch` inside the container does not always notice edits from the host; `docker compose restart server` when a server change does not seem to apply.
 - Katana-Küche performance: `ninja.html?fps#NN` shows a frame-time meter; `window.__ninja.benchDraw(n)` times n flushed draws. The static dojo is cached in an offscreen canvas (`backdrop`, reset in `resize`), dpr is capped at 2, glows use `halo()`/`outlinedText()` instead of `shadowBlur`.
+- Katana-Küche bots ("Holzpuppen", `BOT` in `ninja-hub.js`): players with `bot: true` and no socket, simulated on the hub with `stepBody` (a copy of the phone physics in `ninja.js`, keep both in sync); they claim through the normal `cut`/`collect`/`bump`/`starHit` methods, kicks reach them via `knockBot`. Lobby message `bots` sets the count; humans push bots out of full rooms; bots keep no bests.
