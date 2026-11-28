@@ -47,7 +47,12 @@ the same two-digit room code.
   The recipe can be opened at any time. At the end both plates are shown side by side with a
   score per station and what differed from the recipe; the more accurate baker wins a new
   baking utensil (collected per phone in localStorage). Playing alone works as practice
-  (a prize from 90 %).
+  (a prize from 90 %). Every round brings a random recipe and difficulty: cookies with icing,
+  marmalade cookies (cook jam on the stove), chocolate cookies (water bath), cakes (pick and grease
+  the tin, glaze, decorate top and side) and cream tortes (cut the sponge into layers, whip cream,
+  roast crunch in a pan, stack the layers, decorate top and side). Results show a percentage and
+  a school grade. In the **free mode** (lobby switch) there is no recipe: choose cookies, cake or
+  torte, with or without marmalade, and a jury rates taste, baking, decoration and creativity.
 - **Pong** (`index.html`): a paddle at the bottom; the ball drops in from the top, bounces
   off the side walls and must be kept out of your goal. Return it through the top edge and
   it flies into a random other player's screen.

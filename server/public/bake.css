@@ -1,15 +1,24 @@
 /* ---------- Plätzchen-Duell ---------- */
 
 body.bake {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 180, 100, 0.08), transparent 60%),
+    #1c110b;
   --cream: #fff4e2;
   --ink: #3b2416;
   --wood: #8a5a35;
   --wood-dark: #5e3a20;
   --bake-accent: #ff8fab;
-  background: #2b1a11;
+}
+
+@media (min-width: 520px) {
+  .bake-screen { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 80px rgba(0, 0, 0, 0.6); }
 }
 
 .bake-screen {
+  /* phone width on tablets and desktops: wider only stretches the kitchen */
+  max-width: 480px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   padding: calc(var(--safe-top) + 8px) 10px calc(var(--safe-bottom) + 8px);
@@ -124,120 +133,7 @@ body.bake {
 
 .station-body button { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 
-/* ---------- shelf ---------- */
-
-.shelf {
-  flex: none;
-  padding: 6px 6px 0;
-  background: linear-gradient(180deg, #4a2d1b, #3a2315);
-  border-radius: 12px;
-}
-
-.shelf-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 5px;
-  padding: 0 2px;
-  border-bottom: 7px solid var(--wood);
-  box-shadow: 0 3px 0 var(--wood-dark);
-  margin-bottom: 8px;
-}
-
-.jar {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  align-content: end;
-  gap: 1px;
-  height: 66px;
-  padding: 10px 1px 3px;
-  font: inherit;
-  color: var(--ink);
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.35), transparent 30%, transparent 75%, rgba(255, 255, 255, 0.2)),
-    linear-gradient(180deg, transparent 22%, var(--jar) 22%);
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  border-radius: 6px 6px 10px 10px;
-  cursor: pointer;
-}
-
-.jar::before {
-  content: '';
-  position: absolute;
-  top: -5px;
-  left: 12%;
-  right: 12%;
-  height: 8px;
-  background: #b0472f;
-  border-radius: 4px;
-}
-
-.jar-icon { font-size: 18px; line-height: 1; }
-
-.jar-label {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  min-height: 22px;
-  padding: 1px 2px;
-  overflow: hidden;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.05;
-  overflow-wrap: anywhere;
-  hyphens: auto;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 3px;
-}
-
-.jar.picked { outline: 3px solid var(--bake-accent); outline-offset: 1px; transform: translateY(-4px); }
-.jar.nudge { animation: shake .3s ease; }
-
-/* ---------- scale + bowl ---------- */
-
-.bench {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  flex: none;
-}
-
-.scale {
-  display: grid;
-  gap: 5px;
-  padding: 8px;
-  background: #e9edf0;
-  color: #22303a;
-  border-radius: 14px;
-  box-shadow: inset 0 -4px 0 #c2cad0;
-}
-
-.scale-pan {
-  display: grid;
-  place-items: center;
-  height: 44px;
-  background: linear-gradient(180deg, #ffffff, #cfd6dc);
-  border-radius: 50% / 40%;
-}
-
-.scale-pile { line-height: 1; transition: font-size .1s; }
-
-.scale-display {
-  padding: 3px 6px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 22px;
-  font-weight: 800;
-  text-align: right;
-  color: #b8ff9d;
-  background: #1c2a1f;
-  border-radius: 6px;
-  font-variant-numeric: tabular-nums;
-}
-
-.scale-name { overflow: hidden; font-size: 12px; font-weight: 700; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-
-.scale-row { display: grid; grid-template-columns: auto 1fr; gap: 5px; }
-.scale-row:last-child { grid-template-columns: 1fr 1fr; }
+/* ---------- scale buttons ---------- */
 
 .scale-btn {
   min-height: 36px;
@@ -258,15 +154,6 @@ body.bake {
 .scale-btn.ghost { color: #22303a; background: #cfd6dc; }
 .scale-btn:disabled { opacity: 0.35; }
 .scale-btn.holding { filter: brightness(1.2); }
-
-.bowl-box { display: grid; grid-template-rows: 1fr auto; gap: 5px; min-height: 0; }
-
-.bowl-canvas {
-  width: 100%;
-  height: 100%;
-  min-height: 150px;
-  touch-action: none;
-}
 
 .stir-meter {
   position: relative;
@@ -486,7 +373,7 @@ body.bake {
 
 .sprinkle-jars {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 5px;
   flex: none;
 }
@@ -656,6 +543,264 @@ body.bake {
 
 @media (max-height: 640px) {
   .station-hint { display: none; }
-  .jar { height: 58px; }
-  .jar-icon { font-size: 15px; }
 }
+
+/* ---------- kitchen scene (dough, icing) ---------- */
+
+.kitchen-canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border-radius: 14px;
+  touch-action: none;
+}
+
+.mix-controls {
+  display: grid;
+  grid-template-columns: 42px 1.5fr 1fr 1.5fr;
+  gap: 5px;
+  flex: none;
+}
+
+.mix-controls .scale-btn { min-height: 42px; font-size: 13px; }
+.stir-meter { flex: none; }
+
+/* ---------- decorating: brush and sprinkle jar ---------- */
+
+.decorate-canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 330px;
+  border-radius: 14px;
+  touch-action: none;
+}
+
+.decorate-hint { flex: none; margin: 0; font-size: 13px; font-weight: 700; text-align: center; color: #e6c9a6; }
+
+/* ---------- the prize in big ---------- */
+
+.prize { width: 100%; font: inherit; border: 0; cursor: pointer; }
+.prize-text { display: grid; }
+.prize .prize-emoji { font-size: 60px; }
+.prize-more { font-weight: 600; color: #9a6420; }
+
+.gift-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 196, 107, 0.3), transparent 60%),
+    rgba(24, 13, 7, 0.97);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.gift-stage { display: grid; justify-items: center; gap: 12px; width: 100%; max-width: 360px; text-align: center; }
+.gift-kicker { margin: 0; font-size: 24px; font-weight: 900; }
+.gift-spot { position: relative; display: grid; place-items: center; width: 280px; height: 280px; }
+
+.gift-rays {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgba(255, 214, 120, 0.35) 0 10deg, transparent 10deg 20deg);
+  mask-image: radial-gradient(circle, #000 25%, transparent 70%);
+  -webkit-mask-image: radial-gradient(circle, #000 25%, transparent 70%);
+  opacity: 0;
+  transition: opacity .6s;
+  animation: rays-turn 12s linear infinite;
+}
+
+@keyframes rays-turn { to { transform: rotate(360deg); } }
+
+.gift-box {
+  position: relative;
+  width: 190px;
+  height: 180px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  animation: gift-wiggle 1.4s ease-in-out infinite;
+  transition: opacity .4s .35s, transform .4s .35s;
+}
+
+@keyframes gift-wiggle {
+  0%, 60%, 100% { transform: rotate(0); }
+  70% { transform: rotate(-6deg); }
+  80% { transform: rotate(5deg); }
+  90% { transform: rotate(-3deg); }
+}
+
+.gift-body {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 118px;
+  background:
+    linear-gradient(90deg, transparent 43%, #ffd23d 43% 57%, transparent 57%),
+    linear-gradient(180deg, #e63946, #b8232f);
+  border-radius: 10px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.gift-lid {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 34px;
+  height: 38px;
+  background:
+    linear-gradient(90deg, transparent 43%, #ffd23d 43% 57%, transparent 57%),
+    linear-gradient(180deg, #ff6b7d, #e63946);
+  border-radius: 10px;
+  transition: transform .6s cubic-bezier(.3, 1.4, .5, 1), opacity .6s;
+}
+
+.gift-lid::before, .gift-lid::after {
+  content: '';
+  position: absolute;
+  bottom: 34px;
+  width: 44px;
+  height: 30px;
+  border: 8px solid #ffd23d;
+  border-radius: 50%;
+}
+
+.gift-lid::before { left: calc(50% - 46px); transform: rotate(-18deg); }
+.gift-lid::after { right: calc(50% - 46px); transform: rotate(18deg); }
+
+.gift-emoji {
+  position: absolute;
+  font-size: 150px;
+  line-height: 1;
+  filter: drop-shadow(0 12px 30px rgba(255, 200, 80, 0.7));
+  opacity: 0;
+  transform: translateY(60px) scale(0.2);
+  transition: transform .7s cubic-bezier(.2, 1.5, .4, 1) .25s, opacity .3s .25s;
+  pointer-events: none;
+}
+
+.gift-name { font-size: 26px; line-height: 1.2; opacity: 0; transition: opacity .4s .6s; }
+.gift-hint { margin: 0; font-size: 15px; color: #e6c9a6; }
+
+.gift-overlay.open .gift-box { animation: none; opacity: 0; transform: scale(0.6); pointer-events: none; }
+.gift-overlay.open .gift-lid { transform: translateY(-150px) rotate(-30deg); opacity: 0; }
+.gift-overlay.open .gift-emoji { opacity: 1; transform: none; }
+.gift-overlay.open .gift-rays { opacity: 1; }
+.gift-overlay.open .gift-name { opacity: 1; }
+.gift-overlay.lost .gift-body { filter: saturate(0.6); }
+
+/* ---------- stove (jam, chocolate) ---------- */
+
+.stove-canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 380px;
+  border-radius: 14px;
+  touch-action: none;
+}
+
+.stove-controls { display: grid; grid-template-columns: 44px 1fr 44px auto; align-items: center; gap: 8px; flex: none; }
+.stove-controls .knob { width: 44px; height: 44px; }
+.stove-heat { text-align: center; font-size: 16px; }
+.stove-controls .scale-btn { min-height: 40px; }
+
+/* ---------- levels ---------- */
+
+.recipe-label { margin: -6px 0 10px; font-size: 14px; font-weight: 700; color: #8a5a35; }
+
+/* ---------- free mode ---------- */
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+.mode-switch button {
+  padding: 9px 6px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.mode-switch button[aria-pressed="true"] { color: #3b1626; background: var(--bake-accent); }
+
+.plate-verdict { max-width: 18ch; font-size: 11.5px; line-height: 1.3; color: #e6c9a6; }
+.score-table .stars-row td:not(:first-child) { color: #ffc46b; letter-spacing: 1px; }
+
+/* ---------- cakes and tortes ---------- */
+
+.form-bar { grid-template-columns: repeat(4, 1fr); }
+.form-bar .cutter-icon { width: 44px; height: 44px; }
+.form-bar .cutter-name { font-size: 10.5px; hyphens: manual; }
+
+.cream-controls { grid-template-columns: 52px 1fr; }
+.stir-meter.over span { background: var(--danger); }
+
+.layer-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  flex: none;
+}
+
+.layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--cream);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.layer-btn:disabled { opacity: 0.35; }
+.layer-swatch { flex: none; width: 18px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); }
+.layer-boden { background: linear-gradient(180deg, #c98a3a 0 25%, #f2d58c 25%); }
+.layer-sahne { background: #fdfcf7; }
+.layer-crunch { background: repeating-linear-gradient(45deg, #c98a3a 0 3px, #e9c99a 3px 6px); }
+.layer-erdbeere { background: radial-gradient(circle, #d7263d 40%, #fdfcf7 42%); }
+.layer-kirsche { background: radial-gradient(circle, #7b1026 40%, #fdfcf7 42%); }
+.layer-himbeere { background: radial-gradient(circle, #c2185b 40%, #fdfcf7 42%); }
+
+/* ---------- free mode choice, side view, grades ---------- */
+
+.free-options { display: grid; gap: 8px; }
+.mode-switch.three { grid-template-columns: repeat(3, 1fr); }
+.mode-switch.three button { font-size: 13px; padding: 8px 4px; }
+.jam-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.jam-toggle input { width: 20px; height: 20px; accent-color: #e0517f; }
+
+.view-switch { flex: none; }
+.view-switch button { padding: 7px 6px; font-size: 13px; }
+
+.plate-grade { font-size: 13px; font-weight: 800; color: #ffc46b; }
+.layer-marmelade { background: linear-gradient(180deg, #e0517f, #c2185b); }
+.topping-bar { grid-template-columns: repeat(8, 1fr); gap: 3px; }
+.topping-bar .cutter-icon { width: 32px; height: 32px; }
+.topping-bar .cutter-name { font-size: 9px; }
+.topping-bar .cutter { min-width: 0; }
+.topping-bar .cutter-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

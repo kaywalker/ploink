@@ -43,8 +43,26 @@
     <div id="lobby" class="lobby bake-lobby">
       <div class="lobby-card">
         <p class="lobby-kicker">🍪 Plätzchen-Duell · Raum <strong id="lobby-code">--</strong></p>
-        <h2 class="lobby-title">Wer backt genauer nach Rezept?</h2>
-        <ol class="rules">
+        <div class="mode-switch" role="group" aria-label="Spielart">
+          <button id="mode-recipe" type="button" aria-pressed="true">📜 Nach Rezept</button>
+          <button id="mode-free" type="button" aria-pressed="false">🎨 Freimodus</button>
+        </div>
+        <div id="free-options" class="free-options" hidden>
+          <div class="mode-switch three" role="group" aria-label="Was wird gebacken?">
+            <button type="button" data-kind="cookie" aria-pressed="true">🍪 Plätzchen</button>
+            <button type="button" data-kind="cake" aria-pressed="false">🍰 Kuchen</button>
+            <button type="button" data-kind="torte" aria-pressed="false">🎂 Torte</button>
+          </div>
+          <label class="jam-toggle"><input id="free-jam" type="checkbox"> 🍓 mit Marmelade</label>
+        </div>
+        <h2 id="lobby-title" class="lobby-title">Wer backt genauer nach Rezept?</h2>
+        <ol id="rules-free" class="rules" hidden>
+          <li>Kein Rezept – ihr backt, was ihr wollt.</li>
+          <li>Zutaten, Dicke, Formen, Ofen, Farbe und Streusel sucht jeder auf dem eigenen Handy selbst aus.</li>
+          <li>Oben rechts gibt es ein paar Tipps.</li>
+          <li>Am Ende bewertet die Jury Geschmack, Backkunst, Dekoration und Kreativität. Wer die meisten Punkte hat, gewinnt ein neues Backutensil.</li>
+        </ol>
+        <ol id="rules-recipe" class="rules">
           <li>Ihr bekommt beide dasselbe Rezept.</li>
           <li>Abwiegen, rühren, ausrollen, ausstechen, backen, Guss anrühren, färben, verzieren – jeder auf dem eigenen Handy.</li>
           <li>Oben rechts kannst du jederzeit ins Rezept schauen.</li>
@@ -63,8 +81,9 @@
 
     <div id="recipe" class="recipe-overlay" hidden>
       <article class="recipe-card">
-        <p class="recipe-kicker">Rezept</p>
+        <p id="recipe-kicker" class="recipe-kicker">Rezept</p>
         <h2 id="recipe-title" class="recipe-title">Plätzchen</h2>
+        <p id="recipe-label" class="recipe-label"></p>
         <ol id="recipe-steps" class="recipe-steps"></ol>
         <button id="recipe-close" class="btn bake-next" type="button">Alles klar</button>
       </article>
@@ -74,19 +93,36 @@
       <div class="results-card">
         <p class="lobby-kicker">🍽️ Der Vergleich</p>
         <h2 id="results-title" class="lobby-title">…</h2>
-        <div id="prize" class="prize" hidden>
+        <button id="prize" class="prize" type="button" hidden>
           <span id="prize-emoji" class="prize-emoji">🥄</span>
-          <div><small id="prize-label">Neues Backutensil</small><strong id="prize-name">…</strong></div>
-        </div>
+          <span class="prize-text"><small id="prize-label">Neues Backutensil</small><strong id="prize-name">…</strong><small class="prize-more">Antippen für groß 🔍</small></span>
+        </button>
         <div id="plates" class="plates"></div>
         <table class="score-table">
           <thead id="score-head"></thead>
           <tbody id="score-body"></tbody>
           <tfoot id="score-foot"></tfoot>
         </table>
-        <p class="lobby-hint">Tippe auf eine Zeile, um zu sehen, was vom Rezept abwich.</p>
+        <p id="results-hint" class="lobby-hint">Tippe auf eine Zeile, um zu sehen, was vom Rezept abwich.</p>
         <button id="again" class="btn" type="button">Nochmal backen</button>
         <a href="./" class="btn btn-ghost">Raum verlassen</a>
+      </div>
+    </div>
+
+    <div id="gift" class="gift-overlay" hidden>
+      <div class="gift-stage">
+        <p id="gift-kicker" class="gift-kicker">Dein Preis!</p>
+        <div class="gift-spot">
+          <span class="gift-rays" aria-hidden="true"></span>
+          <button id="gift-box" class="gift-box" type="button" aria-label="Geschenk öffnen">
+            <span class="gift-body"></span>
+            <span class="gift-lid"></span>
+          </button>
+          <span id="gift-emoji" class="gift-emoji" aria-hidden="true"></span>
+        </div>
+        <strong id="gift-name" class="gift-name"></strong>
+        <p id="gift-hint" class="gift-hint">Tippe auf das Geschenk!</p>
+        <button id="gift-close" class="btn" type="button">Zum Vergleich</button>
       </div>
     </div>
 
